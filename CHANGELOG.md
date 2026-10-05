@@ -4,6 +4,7 @@ Une ligne par PR, la plus récente en haut. Le détail est dans la PR.
 
 ## Non publié
 
+- Journal des modifications : ce fichier, une ligne par PR (#5)
 - Collage : la dictée est marquée éphémère, les gestionnaires de presse-papiers ne la gardent plus (#2)
 - Scripts : la compilation se rabat sur le SDK macOS 26 quand SwiftUI demande Xcode (#1)
 - README : en anglais, avec un visuel d'en-tête
