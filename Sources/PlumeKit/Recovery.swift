@@ -78,7 +78,8 @@ public enum Recovery {
         var audio: [(String, [Float])] = [("mic", micSamples)]
 
         if pending.mode == .dictation {
-            let result = try await Pipeline.dictation(samples: micSamples, engine: engine, cleanup: settings.cleanup)
+            let result = try await Pipeline.dictation(
+                samples: micSamples, engine: engine, options: DictationOptions(settings: settings))
             guard !result.text.isEmpty else {
                 discard()
                 return nil

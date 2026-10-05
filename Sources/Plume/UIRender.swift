@@ -75,6 +75,17 @@ enum UIRender {
                 { session.debugSet(phase: .done("Réunion enregistrée"), mode: .meeting, transcript: meeting) }
             ),
             ("ile-8-erreur", false, { session.debugSet(phase: .failed("Rien entendu")) }),
+            ("ile-9-pause", true, { session.debugSet(phase: .recording, mode: .meeting, elapsed: 312, paused: true) }),
+            ("ile-10-appel-detecte", false, { session.debugSet(phase: .suggestion("Zoom")) }),
+            (
+                "ile-11-consigne", false,
+                { session.debugSet(phase: .recording, intent: .transform, elapsed: 2, levels: levels) }
+            ),
+            ("ile-12-mise-au-propre", false, { session.debugSet(phase: .processing("Mise au propre")) }),
+            (
+                "ile-13-micro-muet", false,
+                { session.debugSet(phase: .recording, elapsed: 24, quietMic: true, levels: [Float](repeating: 0, count: SessionController.levelCount)) }
+            ),
         ]
         let geometries: [(String, NotchGeometry)] = [
             ("encoche", NotchGeometry(notchWidth: 185, topHeight: 32)),
@@ -188,6 +199,19 @@ enum DemoLibrary {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-demo-\(UUID().uuidString)")
         setenv("PLUME_LIBRARY", root.path, 1)
         setenv("PLUME_FIRST_NAME", "Léa", 1)
+        // Vocabulaire et règles inventés eux aussi : rien du vrai dossier Application Support.
+        setenv("PLUME_SUPPORT", root.appendingPathComponent("support").path, 1)
+        ReplacementStore.save([
+            Replacement(original: "super whisper", with: "Superwhisper"),
+            Replacement(original: "ma signature", with: "Léa Martin\nDirectrice artistique · studio Brume\n06 12 34 56 78"),
+            Replacement(original: "sitié", with: "CTA"),
+        ])
+        AppRuleStore.save([
+            AppRule(bundleID: "com.tinyspeck.slackmacgap", name: "Slack", style: .message, pressReturn: true),
+            AppRule(bundleID: "com.apple.mail", name: "Mail", style: .standard, polish: true, instructions: "vouvoie, reste chaleureuse"),
+            AppRule(bundleID: "com.apple.Terminal", name: "Terminal", style: .casual, typeText: true),
+            AppRule(bundleID: "*", name: "Toutes les autres applications"),
+        ])
         let store = TranscriptStore(root: root)
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -224,12 +248,12 @@ enum DemoLibrary {
         let meetingStart = calendar.date(byAdding: .minute, value: 11 * 60 + 30, to: today)!
         let lines: [(String, AudioChannel, String)] = [
             ("Inès", .system, "Bon, on fait le point sur le lancement de la nouvelle version ?"),
-            ("Moi", .mic, "Oui. La page est prête, il reste les captures et le texte de l'annonce."),
+            (tr("Moi"), .mic, "Oui. La page est prête, il reste les captures et le texte de l'annonce."),
             ("Thomas", .system, "Je peux m'occuper des captures cet après-midi, il me faut juste la dernière version."),
-            ("Moi", .mic, "Parfait, je te l'envoie après la réunion."),
+            (tr("Moi"), .mic, "Parfait, je te l'envoie après la réunion."),
             ("Inès", .system, "Pour l'annonce, on vise jeudi matin ? C'est là qu'on a le plus d'ouvertures."),
             ("Thomas", .system, "Jeudi ça me va. On prévoit aussi un message pour les anciens utilisateurs ?"),
-            ("Moi", .mic, "Bonne idée, un mail court avec les trois nouveautés principales et un lien vers la page."),
+            (tr("Moi"), .mic, "Bonne idée, un mail court avec les trois nouveautés principales et un lien vers la page."),
             ("Inès", .system, "Je le rédige demain et je vous le partage avant midi."),
         ]
         var segments: [Segment] = []
@@ -242,7 +266,23 @@ enum DemoLibrary {
         try? store.save(
             Transcript(
                 id: store.makeID(for: meetingStart), createdAt: meetingStart, mode: .meeting, duration: 1_472, engine: "demo",
-                text: TranscriptBuilder.text(for: segments), rawText: "", segments: segments, speakers: ["Moi", "Inès", "Thomas"]))
+                text: TranscriptBuilder.text(for: segments), rawText: "", segments: segments, speakers: [tr("Moi"), "Inès", "Thomas"],
+                title: "Lancement de la nouvelle version",
+                summary: """
+                    ## Points clés
+                    - La page de lancement est prête ; il reste les captures d'écran et le texte de l'annonce.
+                    - L'annonce est visée jeudi matin, moment où les ouvertures sont les plus nombreuses.
+                    - Un mail court préviendra les anciens utilisateurs, avec les trois nouveautés principales.
+
+                    ## Décisions
+                    - Annonce jeudi matin.
+                    - Mail aux anciens utilisateurs, avec un lien vers la page.
+
+                    ## Actions
+                    - **Thomas** : les captures, cet après-midi.
+                    - **\(tr("Moi"))** : envoyer la dernière version à Thomas après la réunion.
+                    - **Inès** : rédiger le mail demain et le partager avant midi.
+                    """))
         for (minutes, text, app) in recent {
             save(store, at: calendar.date(byAdding: .minute, value: minutes, to: today)!, text: text, app: app)
         }

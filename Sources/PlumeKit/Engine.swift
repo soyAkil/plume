@@ -2,26 +2,85 @@ import CoreML
 import FluidAudio
 import Foundation
 
-/// Modèles de transcription disponibles. Ajouter un cas ici suffit à l'exposer dans les réglages.
+/// Modèles de transcription disponibles : toute la famille Parakeet TDT que FluidAudio sait
+/// faire tourner, plus un dossier personnalisé. Ajouter un cas ici suffit à l'exposer dans
+/// les réglages.
 public enum EngineModel: String, CaseIterable, Codable, Sendable {
     /// Parakeet Ultra : ré-entraînement 2026 de Parakeet TDT v3, 25 langues européennes,
     /// le plus précis en français parmi les modèles temps réel embarquables.
     case parakeetUltra = "parakeet-ultra"
-    /// Parakeet TDT v3 d'origine (NVIDIA).
+    /// Parakeet TDT v3 d'origine (NVIDIA), 25 langues.
     case parakeetV3 = "parakeet-v3"
+    /// Parakeet Redux : v3 compressé en 2 bits, trois fois plus petit, un peu moins précis en anglais.
+    case parakeetRedux = "parakeet-redux"
+    /// Parakeet TDT v2 : anglais seulement, la référence historique.
+    case parakeetV2 = "parakeet-v2"
+    /// Phonon-2 : ré-entraînement de v3 pour l'anglais, très compact.
+    case phonon2 = "phonon-2"
+    /// Parakeet TDT-CTC 110M : petit et très rapide, anglais.
+    case parakeetTdtCtc110m = "parakeet-tdt-ctc-110m"
+    /// Parakeet japonais.
+    case parakeetJa = "parakeet-ja"
+    /// Un dossier choisi par l'utilisateur, au format Parakeet (quatre `.mlmodelc` et
+    /// `parakeet_vocab.json`) : modèle ré-entraîné, converti soi-même, ou communautaire.
+    case custom = "custom"
 
     public var label: String {
         switch self {
-        case .parakeetUltra: return "Parakeet Ultra (recommandé)"
-        case .parakeetV3: return "Parakeet TDT v3"
+        case .parakeetUltra: return tr("Parakeet Ultra (recommandé)")
+        case .parakeetV3: return tr("Parakeet TDT v3")
+        case .parakeetRedux: return tr("Parakeet Redux (compact)")
+        case .parakeetV2: return tr("Parakeet TDT v2 (anglais)")
+        case .phonon2: return tr("Phonon-2 (anglais, compact)")
+        case .parakeetTdtCtc110m: return tr("Parakeet TDT-CTC 110M (anglais, rapide)")
+        case .parakeetJa: return tr("Parakeet japonais")
+        case .custom: return tr("Dossier personnalisé…")
         }
     }
 
-    var version: AsrModelVersion {
+    /// Langues, taille, précision : de quoi choisir en connaissance de cause.
+    public var detail: String {
+        switch self {
+        case .parakeetUltra:
+            return tr("25 langues européennes dont le français · 600 Mo · le plus précis (FLEURS fr ≈ 4,3 % d'erreur), ~150× le temps réel.")
+        case .parakeetV3:
+            return tr("25 langues européennes · 600 Mo · le modèle NVIDIA d'origine, un peu moins précis qu'Ultra à la même vitesse.")
+        case .parakeetRedux:
+            return tr("25 langues européennes · 220 Mo · encodeur 2 bits : trois fois plus petit, un peu moins précis en anglais, meilleur que v3 ailleurs. Première compilation de plusieurs minutes.")
+        case .parakeetV2:
+            return tr("Anglais seulement · 600 Mo · le plus précis en anglais (LibriSpeech 2,1 % d'erreur).")
+        case .phonon2:
+            return tr("Anglais seulement · très compact · ré-entraînement de v3 par Fermion Research.")
+        case .parakeetTdtCtc110m:
+            return tr("Anglais seulement · 110 M de paramètres · le plus rapide et le plus léger en mémoire.")
+        case .parakeetJa:
+            return tr("Japonais seulement · 600 Mo.")
+        case .custom:
+            return tr("Un dossier contenant Preprocessor, Encoder, Decoder et JointDecision (.mlmodelc) et parakeet_vocab.json, par exemple un Parakeet ré-entraîné et converti avec FluidAudio. Jamais téléchargé, jamais mis à jour.")
+        }
+    }
+
+    /// Le modèle est fourni par FluidAudio (téléchargé une fois depuis Hugging Face).
+    public var isBuiltIn: Bool { self != .custom }
+
+    var version: AsrModelVersion? {
         switch self {
         case .parakeetUltra: return .ultra
         case .parakeetV3: return .v3
+        case .parakeetRedux: return .redux
+        case .parakeetV2: return .v2
+        case .phonon2: return .phonon2
+        case .parakeetTdtCtc110m: return .tdtCtc110m
+        case .parakeetJa: return .tdtJa
+        case .custom: return nil
         }
+    }
+
+    /// Le modèle est déjà dans le cache (ou le dossier personnalisé est complet).
+    public func isAvailableOffline(customDirectory: URL?) -> Bool {
+        if let version { return AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: version), version: version) }
+        guard let customDirectory else { return false }
+        return AsrModels.modelsExist(at: customDirectory)
     }
 }
 
@@ -53,10 +112,14 @@ public struct DiarizationOutput: Sendable {
 
 public enum EngineError: LocalizedError {
     case notReady
+    case noCustomModel
+    case incompleteCustomModel(String)
 
     public var errorDescription: String? {
         switch self {
-        case .notReady: return "Le modèle de transcription n'est pas encore chargé."
+        case .notReady: return tr("Le modèle de transcription n'est pas encore chargé.")
+        case .noCustomModel: return tr("Aucun dossier de modèle personnalisé n'est choisi (Réglages › Modèle).")
+        case .incompleteCustomModel(let name): return "Le dossier du modèle ne contient pas \(name)."
         }
     }
 }
@@ -77,6 +140,8 @@ public actor SpeechEngine {
 
     private var asr: AsrManager?
     private var loadedModel: EngineModel?
+    /// Dossier du modèle personnalisé chargé, pour le recharger s'il change.
+    private var loadedDirectory: URL?
     private var loadTask: Task<Void, Error>?
     private var diarizer: OfflineDiarizerManager?
     private var fixedDiarizers: [Int: OfflineDiarizerManager] = [:]
@@ -87,30 +152,43 @@ public actor SpeechEngine {
     public init() {}
 
     public var isReady: Bool { asr != nil }
-    public var modelName: String { loadedModel?.rawValue ?? "—" }
+    public var modelName: String {
+        guard let loadedModel else { return "—" }
+        if loadedModel == .custom, let loadedDirectory { return "custom:" + loadedDirectory.lastPathComponent }
+        return loadedModel.rawValue
+    }
 
-    /// Charge le modèle (le télécharge au premier lancement, ~600 Mo).
+    /// Charge le modèle (le télécharge au premier lancement, ~600 Mo). Un modèle personnalisé
+    /// est lu dans son dossier, celui des réglages sauf indication contraire.
     public func prepare(
-        model: EngineModel, progress: (@Sendable (EngineLoadPhase) -> Void)? = nil
+        model: EngineModel, directory: URL? = nil, progress: (@Sendable (EngineLoadPhase) -> Void)? = nil
     ) async throws {
-        if loadedModel == model, asr != nil { return }
+        let directory = model == .custom ? (directory ?? PlumeSettings.shared.customModelURL) : nil
+        if loadedModel == model, asr != nil, loadedDirectory == directory { return }
         if let loadTask {
             try await loadTask.value
-            if loadedModel == model { return }
+            if loadedModel == model, loadedDirectory == directory { return }
         }
         let task = Task {
-            let models = try await AsrModels.downloadAndLoad(
-                version: model.version,
-                progressHandler: { p in
-                    switch p.phase {
-                    case .listing: progress?(.downloading(0))
-                    case .downloading: progress?(.downloading(p.fractionCompleted))
-                    case .compiling: progress?(.compiling)
-                    }
-                })
+            let models: AsrModels
+            if let version = model.version {
+                models = try await AsrModels.downloadAndLoad(
+                    version: version,
+                    progressHandler: { p in
+                        switch p.phase {
+                        case .listing: progress?(.downloading(0))
+                        case .downloading: progress?(.downloading(p.fractionCompleted))
+                        case .compiling: progress?(.compiling)
+                        }
+                    })
+            } else {
+                guard let directory else { throw EngineError.noCustomModel }
+                progress?(.compiling)
+                models = try Self.loadCustom(at: directory)
+            }
             let manager = AsrManager(config: .default)
             try await manager.loadModels(models)
-            self.install(manager, model: model)
+            self.install(manager, model: model, directory: directory)
             progress?(.ready)
         }
         loadTask = task
@@ -118,9 +196,29 @@ public actor SpeechEngine {
         try await task.value
     }
 
-    private func install(_ manager: AsrManager, model: EngineModel) {
+    private func install(_ manager: AsrManager, model: EngineModel, directory: URL?) {
         asr = manager
         loadedModel = model
+        loadedDirectory = directory
+    }
+
+    /// Les fichiers qu'un dossier de modèle personnalisé doit contenir.
+    public static let customModelFiles = ["Preprocessor.mlmodelc", "Decoder.mlmodelc", "JointDecision.mlmodelc", "parakeet_vocab.json"]
+
+    /// Ce qui manque dans un dossier pour en faire un modèle (vide : il est complet).
+    public static func missingCustomFiles(in directory: URL) -> [String] {
+        customModelFiles.filter { !FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
+    }
+
+    /// Charge un dossier au format Parakeet. La famille (v2, v3, TDT-CTC) se devine à la taille
+    /// du vocabulaire et à la présence d'un encodeur séparé.
+    static func loadCustom(at directory: URL) throws -> AsrModels {
+        if let missing = missingCustomFiles(in: directory).first { throw EngineError.incompleteCustomModel(missing) }
+        let vocabulary = directory.appendingPathComponent("parakeet_vocab.json")
+        let count = (try? JSONSerialization.jsonObject(with: Data(contentsOf: vocabulary)) as? [String: Any])?.count ?? 0
+        let fused = !FileManager.default.fileExists(atPath: directory.appendingPathComponent("Encoder.mlmodelc").path)
+        let version: AsrModelVersion = fused ? .tdtCtc110m : (count > 2_000 ? .v3 : .v2)
+        return try AsrModels.loadLocal(from: directory, version: version)
     }
 
     /// Libère les modèles (plusieurs centaines de Mo). Ils se rechargent depuis le cache
@@ -129,6 +227,7 @@ public actor SpeechEngine {
         guard loadTask == nil, diarizerTask == nil else { return }
         asr = nil
         loadedModel = nil
+        loadedDirectory = nil
         diarizer = nil
         fixedDiarizers = [:]
         diarizerModels = nil

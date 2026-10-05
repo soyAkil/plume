@@ -15,6 +15,19 @@ enum Remote {
             notification, object: command, userInfo: nil, deliverImmediately: true)
     }
 
+    /// Canal de retour : le texte d'une dictée demandée par `plume listen` ou l'outil MCP.
+    static let resultNotification = Notification.Name(notification.rawValue + ".result")
+
+    /// Remet le texte d'une capture à qui l'attend : écrit dans un fichier temporaire (une
+    /// notification ne porte pas un long texte), dont le chemin est notifié. Le destinataire
+    /// supprime le fichier une fois lu.
+    static func deliver(_ transcript: Transcript) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("plume-capture-\(transcript.id).txt")
+        guard (try? transcript.text.write(to: url, atomically: true, encoding: .utf8)) != nil else { return }
+        DistributedNotificationCenter.default().postNotificationName(
+            resultNotification, object: url.path, userInfo: nil, deliverImmediately: true)
+    }
+
     /// Diagnostic de l'île, branché par l'app.
     nonisolated(unsafe) static var onSnapshot: (() -> Void)?
     /// Diagnostic : ouvrir (vrai) ou refermer (faux) le tiroir de l'île sans la souris.
@@ -28,8 +41,13 @@ enum Remote {
                 switch command {
                 case "toggle-dictee": session.toggle(.dictation)
                 case "toggle-reunion": session.toggle(.meeting)
+                // Dictée sans collage : le texte attend dans la bibliothèque (`plume listen`, outil MCP).
+                case "toggle-capture": session.toggle(.dictation, intent: .capture)
+                case "toggle-transform": session.toggle(.dictation, intent: .transform)
                 case "stop": session.stop()
                 case "cancel": session.cancel()
+                case "pause": session.togglePause()
+                case "paste-last": session.pasteLast()
                 case "open": onOpen()
                 case "snapshot": onSnapshot?()
                 case "tiroir-ouvert": onDrawer?(true)

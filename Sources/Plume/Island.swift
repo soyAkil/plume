@@ -10,6 +10,8 @@ enum Theme {
     static let meeting = Color.white
     static let success = Color(red: 0.36, green: 0.86, blue: 0.56)
     static let warning = Color(red: 1.0, green: 0.76, blue: 0.3)
+    /// Micro qui ne capte rien : un bleu calme, pas une alerte.
+    static let quiet = Color(red: 0.55, green: 0.72, blue: 1.0)
 
     /// Couleurs des interlocuteurs dans l'historique.
     static let speakers: [Color] = [
@@ -178,16 +180,23 @@ struct IslandView: View {
         case .processing(let label):
             switch session.modelStatus {
             case .loading(let fraction?) where fraction < 1:
-                return (nil, .white, "Téléchargement du modèle \(Int(fraction * 100)) %")
+                return (nil, .white, tr("Téléchargement du modèle") + " \(Int(fraction * 100)) %")
             case .loading:
-                return (nil, .white, "Chargement du modèle…")
+                return (nil, .white, tr("Chargement du modèle…"))
             default:
-                return session.mode == .meeting ? (nil, .white, label + "…") : nil
+                return session.mode == .meeting || label != tr("Transcription") ? (nil, .white, label + "…") : nil
             }
         // Un message court (« Collé », « Rien entendu ») tient dans l'oreille droite ; seul un
         // message long ouvre une ligne sous l'encoche. La coche ou l'alerte est à gauche.
         case .done(let label), .failed(let label):
             return earLabel == nil ? (nil, .white, label) : nil
+        case .suggestion(let app):
+            return (nil, .white, "\(app) " + tr("utilise le micro"))
+        case .recording:
+            if session.intent == .transform, session.elapsed < 4 {
+                return (nil, .white, session.hasSelection ? tr("Dicte ce qu'il faut faire du texte sélectionné") : tr("Dicte ce qu'il faut écrire"))
+            }
+            return nil
         default:
             return nil
         }
@@ -214,21 +223,29 @@ struct IslandView: View {
 
     /// Ce que contient le tiroir qui descend sous l'encoche.
     private struct Drawer: Equatable {
+        enum Action: Equatable {
+            case openTranscript
+            case startMeeting
+        }
+
         var status: String?
-        var opensTranscript = false
+        /// Bouton à droite de la ligne d'état : « Ouvrir », « Enregistrer ».
+        var action: Action?
         var committed = ""
         var volatile = ""
         var controls = false
         var mode: RecordingMode = .dictation
+        var paused = false
 
         var hasText: Bool { !(committed.isEmpty && volatile.isEmpty) }
         var isEmpty: Bool { status == nil && !hasText && !controls }
     }
 
     private var drawer: Drawer {
-        var drawer = Drawer(mode: session.mode)
+        var drawer = Drawer(mode: session.mode, paused: session.paused)
         drawer.status = statusLine?.text
-        if case .done = phase, session.mode == .meeting, session.lastTranscript != nil { drawer.opensTranscript = true }
+        if case .done = phase, session.mode == .meeting, session.lastTranscript != nil { drawer.action = .openTranscript }
+        if case .suggestion = phase { drawer.action = .startMeeting }
         if let live = liveText {
             drawer.committed = live.committed
             drawer.volatile = live.volatile
@@ -288,8 +305,8 @@ struct IslandView: View {
     private func width(for drawer: Drawer) -> CGFloat {
         guard model.shown else { return geometry.restWidth }
         if drawer.hasText { return geometry.expandedWidth }
-        if drawer.controls { return max(geometry.compactWidth, 336) }
-        if drawer.status != nil { return max(geometry.compactWidth, 320) }
+        if drawer.controls { return max(geometry.compactWidth, 372) }
+        if drawer.status != nil { return max(geometry.compactWidth, drawer.action == nil ? 320 : 372) }
         return max(geometry.compactWidth, earLabelWidth)
     }
 
@@ -300,10 +317,11 @@ struct IslandView: View {
     private var phaseKind: Int {
         switch phase {
         case .idle: return 0
-        case .recording: return 1
+        case .recording: return session.paused ? 6 : 1
         case .processing: return 2
         case .done: return 3
         case .failed: return 4
+        case .suggestion: return 5
         }
     }
 
@@ -376,9 +394,14 @@ struct IslandView: View {
                         .foregroundColor(Theme.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    if drawer.opensTranscript, let transcript = session.lastTranscript {
-                        Button(action: { onOpen(transcript) }) {
-                            Text("Ouvrir")
+                    if let action = drawer.action {
+                        Button {
+                            switch action {
+                            case .openTranscript: if let transcript = session.lastTranscript { onOpen(transcript) }
+                            case .startMeeting: session.acceptSuggestion()
+                            }
+                        } label: {
+                            Text(action == .openTranscript ? tr("Ouvrir") : tr("Enregistrer"))
                                 .font(UI.sans(12, .medium))
                                 .foregroundColor(.black.opacity(0.88))
                                 .padding(.horizontal, 10)
@@ -403,7 +426,7 @@ struct IslandView: View {
                     .transition(.opacity)
             }
             if drawer.controls {
-                controls(mode: drawer.mode)
+                controls(mode: drawer.mode, paused: drawer.paused)
                     .frame(height: Self.controlsHeight)
                     .transition(.opacity)
             }
@@ -446,8 +469,22 @@ struct IslandView: View {
     @ViewBuilder
     private var leftEar: some View {
         switch phase {
+        case .recording where session.paused:
+            Icon(.pause, size: 13, filled: true)
+                .foregroundColor(Color.white.opacity(0.8))
         case .recording:
-            Waveform(levels: session.levels, tint: session.mode == .meeting ? Theme.meeting : .white)
+            // Rien capté depuis un moment : l'onde s'éteint et un « zZ » bleuté se pose dessus.
+            // Pas de message, c'est l'image qui le dit.
+            ZStack {
+                Waveform(levels: session.levels, tint: session.mode == .meeting ? Theme.meeting : .white)
+                    .opacity(session.quietMic ? 0.22 : 1)
+                if session.quietMic {
+                    Icon(.sleep, size: 15)
+                        .foregroundColor(Theme.quiet)
+                        .transition(.blurFade)
+                }
+            }
+            .animation(.easeOut(duration: 0.35), value: session.quietMic)
         case .processing:
             Spinner()
         case .done:
@@ -456,6 +493,9 @@ struct IslandView: View {
         case .failed:
             Icon(.triangleAlert, size: 15)
                 .foregroundColor(Theme.warning)
+        case .suggestion:
+            Icon(.phoneCall, size: 14)
+                .foregroundColor(Theme.success)
         case .idle:
             EmptyView()
         }
@@ -470,10 +510,14 @@ struct IslandView: View {
                     // S'allume quand le son de l'ordinateur porte de la parole.
                     Icon(.users, size: 12)
                         .foregroundColor(session.systemActive ? Theme.meeting : Theme.meeting.opacity(0.45))
+                } else if session.intent == .transform {
+                    // Une consigne pour l'IA, pas une dictée.
+                    Icon(.sparkles, size: 12)
+                        .foregroundColor(Theme.textPrimary)
                 }
-                Text(Format.clock(session.elapsed))
+                Text(session.paused ? tr("Pause") : Format.clock(session.elapsed))
                     .font(UI.mono(12.5, .medium))
-                    .foregroundColor(Theme.textPrimary)
+                    .foregroundColor(session.paused ? Theme.textSecondary : Theme.textPrimary)
             }
         case .done, .failed:
             if let label = earLabel {
@@ -483,19 +527,28 @@ struct IslandView: View {
                     .lineLimit(1)
                     .fixedSize()
             }
+        case .suggestion:
+            Text(tr("Réunion ?"))
+                .font(UI.sans(13, .medium))
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(1)
+                .fixedSize()
         default:
             EmptyView()
         }
     }
 
-    private func controls(mode: RecordingMode) -> some View {
+    private func controls(mode: RecordingMode, paused: Bool) -> some View {
         HStack(spacing: 6) {
             MeetingKey(on: mode == .meeting) { session.switchMode(to: mode == .meeting ? .dictation : .meeting) }
             Spacer(minLength: 0)
-            IslandButton(help: "Annuler (Échap)", action: { session.cancel() }) {
+            IslandButton(help: paused ? tr("Reprendre") : tr("Mettre en pause"), action: { session.togglePause() }) {
+                Icon(paused ? .play : .pause, size: 11, filled: true)
+            }
+            IslandButton(help: tr("Annuler (Échap)"), action: { session.cancel() }) {
                 Icon(.x, size: 12)
             }
-            IslandButton(help: "Terminer", prominent: true, action: { session.stop() }) {
+            IslandButton(help: tr("Terminer"), prominent: true, action: { session.stop() }) {
                 RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                     .frame(width: 9.5, height: 9.5)
             }
@@ -515,7 +568,7 @@ private struct MeetingKey: View {
             HStack(spacing: 7) {
                 Icon(.users, size: 13)
                     .frame(width: 16)
-                Text("Réunion")
+                Text(tr("Réunion"))
                     .font(UI.sans(12.5, .medium))
                 // Voyant : il s'allume avec le mode.
                 Circle()
@@ -537,7 +590,7 @@ private struct MeetingKey: View {
         .onHover { hovering = $0 }
         .animation(.spring(duration: 0.3, bounce: 0.25), value: on)
         .animation(.easeOut(duration: 0.15), value: hovering)
-        .help(on ? "Revenir à une simple dictée" : "Capter aussi le son de l'ordinateur et séparer les interlocuteurs")
+        .help(on ? tr("Revenir à une simple dictée") : tr("Capter aussi le son de l'ordinateur et séparer les interlocuteurs"))
     }
 }
 

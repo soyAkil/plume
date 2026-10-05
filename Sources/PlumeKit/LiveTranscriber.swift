@@ -92,17 +92,21 @@ public actor LiveTranscriber {
     private var processedCount = 0
 
     /// Durée maximale d'audio non validé envoyée au modèle (son entrée native fait 15 s).
-    private let maxWindow = 12.0
+    private let maxWindow: Double
     /// Audio déjà validé rejoué avant la fenêtre, pour que le modèle garde le fil de la phrase.
     private let leftContext = 2.0
     /// Durée à partir de laquelle on cherche une pause où valider.
-    private let commitAfter = 3.5
+    private let commitAfter: Double
     /// Fin de fenêtre laissée volatile : le modèle manque de contexte sur les derniers mots.
     private let tailKeep = 1.2
 
-    public init(engine: SpeechEngine, buffer: SampleBuffer) {
+    /// - Parameter eager: fenêtres plus courtes, validées plus tôt : chaque passe coûte moins
+    ///   et le texte arrive plus vite, au prix d'un peu de contexte (écriture au fil de la dictée).
+    public init(engine: SpeechEngine, buffer: SampleBuffer, eager: Bool = false) {
         self.engine = engine
         self.buffer = buffer
+        maxWindow = eager ? 9 : 12
+        commitAfter = eager ? 2.2 : 3.5
     }
 
     public var state: State { State(committed: committedText, volatile: volatileText) }
@@ -159,6 +163,27 @@ public actor LiveTranscriber {
         } else {
             volatileText = words.map(\.text).joined(separator: " ")
         }
+        return state
+    }
+
+    /// Fin d'enregistrement : tout ce qui reste est transcrit et validé d'un coup.
+    public func finish() async -> State {
+        let total = buffer.count
+        guard total > committedSample else {
+            volatileText = ""
+            return state
+        }
+        let contextSamples = min(Int(leftContext * sampleRate), committedSample)
+        let windowStart = committedSample - contextSamples
+        let window = buffer.slice(windowStart..<total)
+        volatileText = ""
+        guard !AudioLevel.isSilent(Array(window)), let output = try? await engine.transcribe(window) else { return state }
+        let contextDuration = Double(contextSamples) / sampleRate
+        let words = output.words.filter { ($0.start + $0.end) / 2 >= contextDuration }
+        let tail = words.map(\.text).joined(separator: " ")
+        committedText = [committedText, tail].filter { !$0.isEmpty }.joined(separator: " ")
+        committedSample = total
+        processedCount = total
         return state
     }
 

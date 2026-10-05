@@ -8,6 +8,7 @@ enum CLI {
         "transcribe", "last", "list", "show", "search", "path", "mcp", "live", "render", "toggle", "stop", "cancel",
         "diarize", "doctor", "selftest", "simulate-chord", "open", "sounds", "aec", "words", "reprocess", "mictest",
         "snapshot", "tiroir-ouvert", "tiroir-ferme",
+        "format", "export", "summarize", "polish", "transform", "listen", "pause", "paste", "settings", "calls",
         "help", "--help", "-h",
     ]
 
@@ -40,11 +41,18 @@ enum CLI {
           plume show <id> [--json]                             une transcription
           plume search <mots…> [--json]                        recherche plein texte
           plume transcribe <fichier> [--mode …] [--save]       transcrire un fichier audio
+          plume export <id> --format md|txt|srt|vtt|json [-o f]  exporter une transcription
+          plume summarize <id>                                 résumer une réunion avec l'IA locale
           plume reprocess <id> [--speakers N]                  refaire la séparation des voix
           plume toggle dictee|reunion                          démarrer / arrêter dans l'app ouverte
-          plume stop | plume cancel                            terminer / annuler l'enregistrement
+          plume stop | plume cancel | plume pause              terminer / annuler / mettre en pause
+          plume listen [--timeout 180]                         dicter dans l'app, et recevoir le texte ici
+          plume paste                                          recoller la dernière dictée
           plume open                                           ouvrir la fenêtre de Plume
           plume path                                           dossier de la bibliothèque
+          plume settings export|import <fichier.json>          sauvegarder / restaurer tous les réglages
+          plume format "texte brut" [--style message]          voir la mise en forme d'une dictée
+          plume polish "texte" | plume transform "consigne"    essayer l'IA locale (texte sur l'entrée standard)
           plume doctor                                         état des autorisations et du modèle
           plume mcp                                            serveur MCP (stdio) pour les IA
 
@@ -153,8 +161,134 @@ enum CLI {
             Remote.send(target == .meeting ? "toggle-reunion" : "toggle-dictee")
             return 0
 
-        case "stop", "cancel", "open", "snapshot", "tiroir-ouvert", "tiroir-ferme":
+        case "stop", "cancel", "open", "pause", "snapshot", "tiroir-ouvert", "tiroir-ferme":
             Remote.send(command)
+            return 0
+
+        case "paste":
+            Remote.send("paste-last")
+            return 0
+
+
+        case "listen":
+            // Dictée sans collage : l'app enregistre, le texte revient ici. Pour un script ou
+            // un agent qui veut « entendre » l'utilisateur.
+            let timeout = take(option: "--timeout", from: &rest).flatMap(Double.init) ?? 180
+            guard let text = await Listener.listen(store: store, timeout: timeout) else {
+                printError("Aucune dictée reçue (l'app est-elle lancée ?).")
+                return 1
+            }
+            emit(text)
+            return 0
+
+        case "format":
+            // Diagnostic : la mise en forme d'un texte brut (nettoyage, commandes vocales, vocabulaire, style).
+            let style = take(option: "--style", from: &rest).flatMap(DictationStyle.init(rawValue:)) ?? .standard
+            let text = rest.isEmpty ? readStandardInput() : rest.joined(separator: " ")
+            let result = Pipeline.format(text, options: DictationOptions(settings: settings, style: style))
+            emit(result.text + (result.pressReturn ? "\n⏎" : ""))
+            return 0
+
+        case "export":
+            let name = take(option: "--format", from: &rest) ?? "md"
+            let output = take(option: "-o", from: &rest)
+            guard let format = ExportFormat(rawValue: name) else {
+                printError("Formats : md, txt, srt, vtt, json.")
+                return 2
+            }
+            guard let id = rest.first, let t = store.load(id: id) else {
+                printError("Transcription introuvable.")
+                return 1
+            }
+            let rendered = Exporter.render(t, as: format)
+            if let output {
+                do {
+                    try rendered.write(toFile: (output as NSString).expandingTildeInPath, atomically: true, encoding: .utf8)
+                } catch {
+                    printError("Échec : \(error.localizedDescription)")
+                    return 1
+                }
+            } else {
+                emit(rendered)
+            }
+            return 0
+
+        case "summarize":
+            guard let id = rest.first, let t = store.load(id: id) else {
+                printError("Transcription introuvable.")
+                return 1
+            }
+            do {
+                let summary = try await LocalAI.summarize(t)
+                var updated = t
+                updated.summary = summary.markdown
+                if updated.title == nil { updated.title = summary.title }
+                if !take(flag: "--no-save", from: &rest) { try store.save(updated) }
+                emit("# \(summary.title)\n\n\(summary.markdown)")
+                return 0
+            } catch {
+                printError("Échec : \(error.localizedDescription)")
+                return 1
+            }
+
+        case "polish":
+            let instructions = take(option: "--instructions", from: &rest) ?? settings.polishInstructions
+            let text = rest.isEmpty ? readStandardInput() : rest.joined(separator: " ")
+            do {
+                emit(try await LocalAI.polish(text, instructions: instructions))
+                return 0
+            } catch {
+                printError("Échec : \(error.localizedDescription)")
+                return 1
+            }
+
+        case "transform":
+            // plume transform "traduis en anglais" < texte.txt
+            guard let instruction = rest.first else {
+                printError("Usage : plume transform \"consigne\" < texte")
+                return 2
+            }
+            let selection = isatty(STDIN_FILENO) == 0 ? readStandardInput() : ""
+            do {
+                emit(try await LocalAI.transform(selection, instruction: instruction))
+                return 0
+            } catch {
+                printError("Échec : \(error.localizedDescription)")
+                return 1
+            }
+
+        case "settings":
+            guard rest.count >= 2 else {
+                printError("Usage : plume settings export|import <fichier.json>")
+                return 2
+            }
+            let url = URL(fileURLWithPath: (rest[1] as NSString).expandingTildeInPath)
+            do {
+                switch rest[0] {
+                case "export":
+                    try SettingsBackup.export(to: url)
+                    emit("Réglages enregistrés dans \(url.path)")
+                case "import":
+                    try SettingsBackup.import(from: url)
+                    emit("Réglages restaurés. Relance Plume pour qu'ils soient tous pris en compte.")
+                default:
+                    printError("Usage : plume settings export|import <fichier.json>")
+                    return 2
+                }
+                return 0
+            } catch {
+                printError("Échec : \(error.localizedDescription)")
+                return 1
+            }
+
+        case "calls":
+            // Diagnostic : les apps qui lisent le micro en ce moment, et celles que Plume reconnaît.
+            let processes = MeetingDetector.processesUsingInput()
+            if processes.isEmpty { emit("Aucune autre app n'utilise le micro.") }
+            for process in processes {
+                let known = MeetingDetector.apps[process.bundleID].map { " → \($0.name), proposé après \(Int($0.delay)) s" } ?? ""
+                emit("\(process.bundleID) (pid \(process.pid))\(known)")
+            }
             return 0
 
         case "simulate-chord":
@@ -392,6 +526,11 @@ enum CLI {
         FileHandle.standardError.write((message + "\n").data(using: .utf8)!)
     }
 
+    private static func readStandardInput() -> String {
+        let data = FileHandle.standardInput.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     private static func pad(_ s: String, _ width: Int) -> String {
         s.count >= width ? s : s + String(repeating: " ", count: width - s.count)
     }
@@ -407,5 +546,43 @@ enum CLI {
         let value = args[index + 1]
         args.removeSubrange(index...index + 1)
         return value
+    }
+}
+
+/// Fait dicter l'utilisateur dans l'app ouverte et attend que le texte arrive dans la
+/// bibliothèque : le « micro » des scripts et des agents (`plume listen`, outil MCP `listen`).
+enum Listener {
+    /// Boîte aux lettres remplie par la notification de résultat.
+    private final class Mailbox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var text: String?
+        func put(_ value: String) { lock.withLock { text = value } }
+        func take() -> String? { lock.withLock { text } }
+    }
+
+    static func listen(store: TranscriptStore, timeout: TimeInterval) async -> String? {
+        let mailbox = Mailbox()
+        let observer = DistributedNotificationCenter.default().addObserver(
+            forName: Remote.resultNotification, object: nil, queue: nil
+        ) { note in
+            guard let path = note.object as? String, let text = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+            try? FileManager.default.removeItem(atPath: path)
+            mailbox.put(text)
+        }
+        defer { DistributedNotificationCenter.default().removeObserver(observer) }
+        let before = store.latest(mode: .dictation)?.id
+        let started = Date()
+        Remote.send("toggle-capture")
+        while Date().timeIntervalSince(started) < timeout {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if let text = mailbox.take() { return text }
+            // Filet : une dictée nouvelle dans la bibliothèque, commencée après notre demande.
+            if let latest = store.latest(mode: .dictation), latest.id != before,
+                latest.createdAt >= started.addingTimeInterval(-2)
+            {
+                return latest.text
+            }
+        }
+        return nil
     }
 }

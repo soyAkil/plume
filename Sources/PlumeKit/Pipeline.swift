@@ -29,16 +29,65 @@ public enum PipelineStage: Sendable {
     case separatingSpeakers
 }
 
+/// Ce qu'on fait du texte d'une dictée une fois transcrit, dans l'ordre : nettoyage des
+/// hésitations, commandes vocales, vocabulaire, puis style propre à l'application.
+public struct DictationOptions: Sendable {
+    public var cleanup: Bool
+    public var voiceCommands: Bool
+    public var style: DictationStyle
+
+    public init(cleanup: Bool = true, voiceCommands: Bool = true, style: DictationStyle = .standard) {
+        self.cleanup = cleanup
+        self.voiceCommands = voiceCommands
+        self.style = style
+    }
+
+    public init(settings: PlumeSettings, style: DictationStyle = .standard) {
+        self.init(cleanup: settings.cleanup, voiceCommands: settings.voiceCommands, style: style)
+    }
+}
+
+public struct DictationResult: Sendable, Equatable {
+    public var text: String
+    /// Sortie brute du modèle.
+    public var raw: String
+    /// La dictée demandait d'appuyer sur Entrée à la fin.
+    public var pressReturn: Bool
+
+    public init(text: String, raw: String, pressReturn: Bool = false) {
+        self.text = text
+        self.raw = raw
+        self.pressReturn = pressReturn
+    }
+}
+
 /// Traitements de fin d'enregistrement, communs à l'app, à l'import et à la ligne de commande.
 public enum Pipeline {
-    /// Dictée : transcription de tout l'audio, puis nettoyage léger optionnel.
+    /// Dictée : transcription de tout l'audio, puis mise en forme du texte.
     public static func dictation(
-        samples: [Float], engine: SpeechEngine, cleanup: Bool
-    ) async throws -> (text: String, raw: String) {
-        guard !AudioLevel.isSilent(samples) else { return ("", "") }
+        samples: [Float], engine: SpeechEngine, options: DictationOptions
+    ) async throws -> DictationResult {
+        guard !AudioLevel.isSilent(samples) else { return DictationResult(text: "", raw: "") }
         let output = try await engine.transcribe(samples)
-        let cleaned = cleanup ? TextCleanup.clean(output.text) : output.text
-        return (ReplacementStore.apply(ReplacementStore.load(), to: cleaned), output.text)
+        return format(output.text, options: options)
+    }
+
+    /// Mise en forme du texte brut d'une dictée, sans audio : la même pour l'app, la reprise,
+    /// l'import et le diagnostic `plume format`.
+    /// - Parameter final: faux pour un morceau écrit au fil de la dictée (le style n'y touche pas au point final).
+    public static func format(
+        _ raw: String, options: DictationOptions, replacements: [Replacement]? = nil, final: Bool = true
+    ) -> DictationResult {
+        var text = options.cleanup ? TextCleanup.clean(raw) : raw
+        var pressReturn = false
+        if options.voiceCommands {
+            let commands = VoiceCommands.apply(to: text)
+            text = commands.text
+            pressReturn = commands.pressReturn
+        }
+        text = ReplacementStore.apply(replacements ?? ReplacementStore.load(), to: text)
+        text = TextStyle.apply(options.style, to: text, final: final)
+        return DictationResult(text: text, raw: raw, pressReturn: pressReturn)
     }
 
     /// Réunion ou import : transcription de chaque canal, séparation des voix, fil chronologique.
@@ -225,10 +274,7 @@ extension Pipeline {
 
 /// Stockage de l'empreinte vocale du propriétaire.
 public enum VoiceprintStore {
-    public static var url: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("Plume", isDirectory: true).appendingPathComponent("empreinte-vocale.json")
-    }
+    public static var url: URL { PlumeSettings.supportDirectory.appendingPathComponent("empreinte-vocale.json") }
 
     public static func load() -> Voiceprint? {
         guard let data = try? Data(contentsOf: url) else { return nil }

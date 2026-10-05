@@ -21,6 +21,8 @@ private func relaunchFromRealPathIfNeeded() {
 relaunchFromRealPathIfNeeded()
 
 let arguments = CommandLine.arguments
+// La langue de l'interface vaut aussi pour la ligne de commande (titres, noms d'interlocuteurs).
+L10n.current = PlumeSettings.shared.language
 
 if CLI.handles(arguments) {
     // Mode ligne de commande : pas d'interface, on sort avec le code de la commande.

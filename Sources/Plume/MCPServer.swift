@@ -11,7 +11,7 @@ struct MCPServer {
             guard !line.isEmpty, let data = line.data(using: .utf8),
                 let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { continue }
-            guard let response = handle(message) else { continue }
+            guard let response = await handle(message) else { continue }
             if let out = try? JSONSerialization.data(withJSONObject: response, options: [.withoutEscapingSlashes]),
                 let text = String(data: out, encoding: .utf8)
             {
@@ -20,7 +20,7 @@ struct MCPServer {
         }
     }
 
-    private func handle(_ message: [String: Any]) -> [String: Any]? {
+    private func handle(_ message: [String: Any]) async -> [String: Any]? {
         guard let method = message["method"] as? String else { return nil }
         // Les notifications n'ont pas d'identifiant et n'attendent pas de réponse.
         guard let id = message["id"] else { return nil }
@@ -34,7 +34,7 @@ struct MCPServer {
                 "serverInfo": ["name": "plume", "version": "1.0.0"],
                 "instructions":
                     "Transcriptions vocales locales de l'utilisateur (dictées, réunions avec interlocuteurs, imports). "
-                    + "« Moi » désigne l'utilisateur.",
+                    + "« Moi » (ou « Me ») désigne l'utilisateur.",
             ])
         case "ping":
             return result(id, [String: Any]())
@@ -43,7 +43,7 @@ struct MCPServer {
         case "tools/call":
             let name = params["name"] as? String ?? ""
             let arguments = params["arguments"] as? [String: Any] ?? [:]
-            guard let text = call(name, arguments) else {
+            guard let text = await call(name, arguments) else {
                 return result(id, ["content": [["type": "text", "text": "Outil inconnu : \(name)"]], "isError": true])
             }
             return result(id, ["content": [["type": "text", "text": text]]])
@@ -56,7 +56,7 @@ struct MCPServer {
         ["jsonrpc": "2.0", "id": id, "result": value]
     }
 
-    private func call(_ name: String, _ args: [String: Any]) -> String? {
+    private func call(_ name: String, _ args: [String: Any]) async -> String? {
         let mode = (args["mode"] as? String).flatMap(RecordingMode.init(slug:))
         switch name {
         case "get_latest_transcript":
@@ -73,6 +73,24 @@ struct MCPServer {
         case "search_transcripts":
             let limit = min(max(args["limit"] as? Int ?? 10, 1), 50)
             return summaries(store.search(args["query"] as? String ?? "", limit: limit))
+        case "listen":
+            // L'app enregistre, l'utilisateur termine avec son raccourci, le texte revient ici.
+            let timeout = min(max(args["timeout"] as? Double ?? 180, 10), 900)
+            guard let text = await Listener.listen(store: store, timeout: timeout) else {
+                return "Aucune dictée reçue : Plume n'est peut-être pas lancée, ou l'utilisateur n'a rien dit avant le délai."
+            }
+            return text
+        case "summarize_transcript":
+            guard let id = args["id"] as? String, var t = store.load(id: id) else { return "Transcription introuvable." }
+            do {
+                let summary = try await LocalAI.summarize(t)
+                t.summary = summary.markdown
+                if t.title == nil { t.title = summary.title }
+                try store.save(t)
+                return "# \(summary.title)\n\n\(summary.markdown)"
+            } catch {
+                return "Résumé impossible : \(error.localizedDescription)"
+            }
         default:
             return nil
         }
@@ -129,6 +147,26 @@ struct MCPServer {
                     "limit": ["type": "integer", "description": "Nombre maximal de résultats (10 par défaut)."],
                 ],
                 "required": ["query"],
+            ],
+        ],
+        [
+            "name": "listen",
+            "description":
+                "Fait parler l'utilisateur : Plume ouvre le micro, l'utilisateur dicte sa réponse puis termine avec son raccourci (ou plume stop), et le texte transcrit est renvoyé. À utiliser pour poser une question à l'utilisateur et recevoir sa réponse à la voix, ou quand il demande à répondre à l'oral. Bloque jusqu'à la fin de la dictée (délai maximal : timeout).",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "timeout": ["type": "number", "description": "Délai maximal d'attente, en secondes (180 par défaut)."]
+                ],
+            ],
+        ],
+        [
+            "name": "summarize_transcript",
+            "description": "Résume une réunion avec l'IA locale du Mac (points clés, décisions, actions) et range le résumé dans la transcription.",
+            "inputSchema": [
+                "type": "object",
+                "properties": ["id": ["type": "string", "description": "Identifiant de la transcription."]],
+                "required": ["id"],
             ],
         ],
     ]

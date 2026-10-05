@@ -83,7 +83,8 @@ public enum TextCleanup {
         return words.contains(where: functionWords.contains)
     }
 
-    private static func capitalizeFirst(_ text: String) -> String {
+    /// Une majuscule au premier mot, s'il n'en a pas.
+    public static func capitalizeFirst(_ text: String) -> String {
         guard let first = text.first, first.isLowercase else { return text }
         return first.uppercased() + text.dropFirst()
     }

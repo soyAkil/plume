@@ -39,12 +39,14 @@ public final class TranscriptStore: @unchecked Sendable {
         return f
     }()
 
-    private static let titleFormatter: DateFormatter = {
+    /// « 2 oct. 2026 à 11:30 » ou « Oct 2, 2026 at 11:30 AM », selon la langue en vigueur.
+    private static var titleFormatter: DateFormatter {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "fr_FR")
-        f.dateFormat = "d MMM yyyy 'à' HH:mm"
+        f.locale = L10n.current.locale
+        f.dateStyle = .medium
+        f.timeStyle = .short
         return f
-    }()
+    }
 
     /// Identifiant libre pour cette date. En cas de collision dans la même seconde, une lettre
     /// (`b`, `c`…) est ajoutée : l'ordre alphabétique des fichiers reste l'ordre chronologique.
@@ -256,6 +258,7 @@ public final class TranscriptStore: @unchecked Sendable {
                 duree_s: Int(t.duration.rounded()),
                 interlocuteurs: t.speakers,
                 fichier: "\(String(t.id.prefix(7)))/\(t.id)_\(t.mode.slug).md",
+                titre: t.title,
                 apercu: t.preview
             )
             if let data = try? encoder.encode(entry), let line = String(data: data, encoding: .utf8) {
@@ -274,13 +277,50 @@ public final class TranscriptStore: @unchecked Sendable {
         var duree_s: Int
         var interlocuteurs: [String]
         var fichier: String
+        var titre: String?
         var apercu: String
+    }
+
+    // MARK: - Entretien
+
+    /// Supprime l'audio des transcriptions plus anciennes que `cutoff` (le texte reste).
+    /// - Returns: le nombre de transcriptions allégées.
+    @discardableResult
+    public func dropAudio(olderThan cutoff: Date) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        var count = 0
+        for url in allJSONFiles() {
+            guard var t = decode(url), !t.audioFiles.isEmpty, t.createdAt < cutoff else { continue }
+            for audio in audioURLs(for: t) { try? fm.removeItem(at: audio) }
+            t.audioFiles = []
+            guard let json = try? jsonEncoder.encode(t) else { continue }
+            try? json.write(to: jsonURL(for: t), options: .atomic)
+            try? Self.markdown(for: t).write(to: markdownURL(for: t), atomically: true, encoding: .utf8)
+            count += 1
+        }
+        if count > 0 { try? rebuildIndexUnlocked() }
+        return count
+    }
+
+    private var jsonEncoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
     }
 
     // MARK: - Rendu Markdown
 
+    /// « Point lancement », ou à défaut « Réunion du 2 oct. 2026 à 11:30 ».
     public static func title(for t: Transcript) -> String {
-        "\(t.mode.label) du \(titleFormatter.string(from: t.createdAt))"
+        if let title = t.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { return title }
+        return dateTitle(for: t)
+    }
+
+    public static func dateTitle(for t: Transcript) -> String {
+        let date = titleFormatter.string(from: t.createdAt)
+        return L10n.current == .french ? "\(t.mode.label) du \(date)" : "\(t.mode.label), \(date)"
     }
 
     public static func markdown(for t: Transcript) -> String {
@@ -301,7 +341,16 @@ public final class TranscriptStore: @unchecked Sendable {
         lines.append("---")
         lines.append("")
         lines.append("# \(title(for: t))")
+        if t.title != nil { lines.append("\(dateTitle(for: t))") }
         lines.append("")
+        if let summary = t.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+            lines.append("## " + tr("Résumé"))
+            lines.append("")
+            lines.append(summary)
+            lines.append("")
+            lines.append("## " + tr("Transcription"))
+            lines.append("")
+        }
         lines.append(body(for: t))
         lines.append("")
         return lines.joined(separator: "\n")

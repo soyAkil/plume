@@ -46,6 +46,7 @@ struct AppShell: View {
                 case .home: HomePage(app: app, session: session, settings: app.settings).transition(pageTransition)
                 case .history: HistoryPage(app: app, library: app.library).transition(pageTransition)
                 case .vocabulary: VocabularyPage(settings: app.settings).transition(pageTransition)
+                case .apps: ApplicationsPage(settings: app.settings).transition(pageTransition)
                 case .settings: SettingsPage(settings: app.settings).transition(pageTransition)
                 }
             }
@@ -64,6 +65,8 @@ struct AppShell: View {
             .padding(.trailing, 14)
         }
         .frame(minWidth: 880, minHeight: 560)
+        // Changer de langue redessine toute la fenêtre : chaque texte est relu dans la table.
+        .id(app.settings.language)
         .background(UI.window)
         .foregroundStyle(UI.text)
         .tracking(-0.15)
@@ -118,14 +121,14 @@ private struct Dock: View {
             Rectangle().fill(UI.active).frame(width: 1, height: 18).padding(.horizontal, 7)
             // Le soleil entre et sort par la gauche, la lune par la droite, comme sur le portfolio.
             DockItem(
-                glyph: scheme == .dark ? .sun : .moon, label: scheme == .dark ? "Thème clair" : "Thème sombre",
+                glyph: scheme == .dark ? .sun : .moon, label: scheme == .dark ? tr("Thème clair") : tr("Thème sombre"),
                 key: "T", slide: scheme == .dark ? -1 : 1, namespace: selection
             ) {
                 Sounds.play(.tab)
                 settings.appearance = scheme == .dark ? "clair" : "sombre"
             }
             DockItem(
-                glyph: settings.sounds ? .speakerOn : .speakerOff, label: settings.sounds ? "Couper le son" : "Activer le son",
+                glyph: settings.sounds ? .speakerOn : .speakerOff, label: settings.sounds ? tr("Couper le son") : tr("Activer le son"),
                 key: "S", namespace: selection
             ) {
                 settings.sounds.toggle()
@@ -249,7 +252,7 @@ private struct UpdatePill: View {
             Button(action: { updates.check() }) {
                 HStack(spacing: 6) {
                     Icon(.download, size: 12)
-                    Text("Plume \(version) est disponible").font(UI.sans(12, .medium))
+                    Text("Plume \(version) " + tr("est disponible")).font(UI.sans(12, .medium))
                 }
                 .foregroundStyle(UI.onText)
                 .padding(.horizontal, 9)
@@ -273,11 +276,11 @@ private struct ModelCard: View {
         switch session.modelStatus {
         case .loading(let fraction?) where fraction < 1:
             return (
-                "Téléchargement du modèle de transcription",
-                "Une seule fois, environ 600 Mo. Ensuite tout se passe sur ce Mac, sans connexion.", fraction, false
+                tr("Téléchargement du modèle de transcription"),
+                tr("Une seule fois, environ 600 Mo. Ensuite tout se passe sur ce Mac, sans connexion."), fraction, false
             )
         case .failed(let reason):
-            return ("Le modèle de transcription n'a pas pu être chargé", reason, nil, true)
+            return (tr("Le modèle de transcription n'a pas pu être chargé"), reason, nil, true)
         default:
             return nil
         }
@@ -296,7 +299,7 @@ private struct ModelCard: View {
                         if let fraction = state.fraction {
                             Text("\(Int(fraction * 100)) %").font(UI.mono(13)).foregroundStyle(UI.text2)
                         } else if state.failed {
-                            PlumeButton(title: "Réessayer", kind: .primary) { session.loadModel() }
+                            PlumeButton(title: tr("Réessayer"), kind: .primary) { session.loadModel() }
                         }
                     }
                     if let fraction = state.fraction {
@@ -323,14 +326,14 @@ private struct StatusPill: View {
 
     private var state: (color: Color, text: String, ready: Bool) {
         switch session.phase {
-        case .recording: return (Theme.recording, session.mode == .meeting ? "Réunion en cours" : "Dictée en cours", false)
-        case .processing: return (UI.text, "Transcription…", false)
+        case .recording: return (Theme.recording, session.mode == .meeting ? tr("Réunion en cours") : tr("Dictée en cours"), false)
+        case .processing: return (UI.text, tr("Transcription…"), false)
         default:
             switch session.modelStatus {
-            case .loading(let fraction?) where fraction < 1: return (UI.text, "Modèle : \(Int(fraction * 100)) %", false)
-            case .loading: return (UI.text, "Chargement du modèle…", false)
-            case .failed: return (Theme.recording, "Modèle indisponible", false)
-            case .ready: return (UI.success, "Prêt", true)
+            case .loading(let fraction?) where fraction < 1: return (UI.text, tr("Modèle :") + " \(Int(fraction * 100)) %", false)
+            case .loading: return (UI.text, tr("Chargement du modèle…"), false)
+            case .failed: return (Theme.recording, tr("Modèle indisponible"), false)
+            case .ready: return (UI.success, tr("Prêt"), true)
             }
         }
     }
@@ -371,14 +374,14 @@ struct HomePage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                PageHeader(title: firstName.isEmpty ? "Bonjour" : "Bonjour \(firstName)") {
+                PageHeader(title: firstName.isEmpty ? tr("Bonjour") : tr("Bonjour") + " \(firstName)") {
                     HStack(spacing: 6) {
-                        Text("Appuie sur")
+                        Text(tr("Appuie sur"))
                         Keycaps(shortcut: HotkeyManager.describe(settings.dictationShortcut))
-                        Text("pour dicter, le texte se colle là où est ton curseur.")
+                        Text(tr("pour dicter, le texte se colle là où est ton curseur."))
                     }
                 } trailing: {
-                    PlumeButton(title: "Transcrire un fichier", icon: .download) { app.chooseFiles() }
+                    PlumeButton(title: tr("Transcrire un fichier"), icon: .download) { app.chooseFiles() }
                 }
                 .padding(.bottom, 10)
                 .rise(0)
@@ -392,12 +395,12 @@ struct HomePage: View {
                     TodayTile(stats: stats).rise(1)
                     StreakTile(stats: stats).rise(2)
                     StatTile(
-                        value: stats.timeSaved / 60, format: HomePage.span, label: "gagnés sur le clavier",
-                        detail: "\(HomePage.number(Double(stats.words))) mots au total"
+                        value: stats.timeSaved / 60, format: HomePage.span, label: tr("gagnés sur le clavier"),
+                        detail: "\(HomePage.number(Double(stats.words))) " + tr("mots au total")
                     ).rise(3)
                     StatTile(
                         value: Double(stats.wordsPerMinute), format: { $0 < 1 ? "—" : HomePage.number($0) },
-                        label: "mots par minute", detail: "au clavier : 40"
+                        label: tr("mots par minute"), detail: tr("au clavier : 40")
                     ).rise(4)
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -405,8 +408,8 @@ struct HomePage: View {
                 Card {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("Activité").font(UI.sans(14, .medium))
-                            Text("mots dictés par jour").font(UI.sans(13)).foregroundStyle(UI.text2)
+                            Text(tr("Activité")).font(UI.sans(14, .medium))
+                            Text(tr("mots dictés par jour")).font(UI.sans(13)).foregroundStyle(UI.text2)
                         }
                         ActivityHeatmap(days: stats.days)
                     }
@@ -417,11 +420,11 @@ struct HomePage: View {
                     Card {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 8) {
-                                Text("Dernière transcription").font(UI.sans(14, .medium))
+                                Text(tr("Dernière transcription")).font(UI.sans(14, .medium))
                                 Text(TranscriptStore.title(for: latest)).font(UI.sans(13)).foregroundStyle(UI.text2)
                                 Spacer()
                                 CopyButton(text: latest.text)
-                                PlumeButton(title: "Ouvrir", icon: .arrowUpRight) { app.open(latest) }
+                                PlumeButton(title: tr("Ouvrir"), icon: .arrowUpRight) { app.open(latest) }
                             }
                             Text(latest.preview)
                                 .font(UI.sans(14))
@@ -446,7 +449,7 @@ struct HomePage: View {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
-        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.locale = L10n.current.locale
         return formatter.string(from: NSNumber(value: value.rounded())) ?? "\(Int(value))"
     }
 
@@ -532,8 +535,8 @@ private struct TodayTile: View {
         Tile {
             VStack(alignment: .leading, spacing: 4) {
                 TileFigure(value: shown, format: HomePage.number)
-                Text("mots aujourd'hui").font(UI.sans(13, .medium)).lineLimit(1)
-                Text(isRecord ? "Meilleure journée" : "record : \(HomePage.number(Double(record)))")
+                Text(tr("mots aujourd'hui")).font(UI.sans(13, .medium)).lineLimit(1)
+                Text(isRecord ? tr("Meilleure journée") : tr("record :") + " \(HomePage.number(Double(record)))")
                     .font(UI.sans(12))
                     .foregroundStyle(isRecord ? UI.text : UI.text2)
                     .lineLimit(1)
@@ -571,8 +574,8 @@ private struct StreakTile: View {
         Tile {
             VStack(alignment: .leading, spacing: 4) {
                 TileFigure(value: shown, format: HomePage.number)
-                Text(stats.streak > 1 ? "jours d'affilée" : "jour d'affilée").font(UI.sans(13, .medium)).lineLimit(1)
-                Text("record : \(stats.bestStreak) jour\(stats.bestStreak > 1 ? "s" : "")")
+                Text(stats.streak > 1 ? tr("jours d'affilée") : tr("jour d'affilée")).font(UI.sans(13, .medium)).lineLimit(1)
+                Text(tr("record :") + " \(stats.bestStreak) " + tr(stats.bestStreak > 1 ? "jours" : "jour"))
                     .font(UI.sans(12))
                     .foregroundStyle(UI.text2)
                     .lineLimit(1)
@@ -601,12 +604,12 @@ private struct ActivityHeatmap: View {
     @State private var hovered: Date?
     @State private var revealed = false
 
-    private static let dayFormatter: DateFormatter = {
+    private static var dayFormatter: DateFormatter {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "fr_FR")
-        f.dateFormat = "EEEE d MMMM"
+        f.locale = L10n.current.locale
+        f.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
         return f
-    }()
+    }
 
     /// Semaines du lundi au dimanche, la dernière pouvant être incomplète.
     private var weeks: [[LibraryStats.Day?]] {
@@ -677,16 +680,16 @@ private struct ActivityHeatmap: View {
                 if let hovered, let day = days.first(where: { $0.date == hovered }) {
                     Text(Self.dayFormatter.string(from: day.date).capitalizedFirst)
                         .foregroundStyle(UI.text)
-                    Text(day.words == 0 ? "rien dicté" : "\(HomePage.number(Double(day.words))) mots")
+                    Text(day.words == 0 ? tr("rien dicté") : "\(HomePage.number(Double(day.words))) " + tr("mots"))
                 } else {
-                    Text("Survole une case pour voir le détail d'une journée.")
+                    Text(tr("Survole une case pour voir le détail d'une journée."))
                 }
                 Spacer()
-                Text("Moins")
+                Text(tr("Moins"))
                 ForEach(0..<4, id: \.self) { step in
                     RoundedRectangle(cornerRadius: 3, style: .continuous).fill(UI.activity[step]).frame(width: 11, height: 11)
                 }
-                Text("Plus")
+                Text(tr("Plus"))
             }
             .font(UI.sans(12))
             .foregroundStyle(UI.text2)
@@ -708,7 +711,7 @@ struct CopyButton: View {
 
     var body: some View {
         PlumeButton(
-            title: copied ? "Copié" : "Copier", icon: copied ? .check : .copy,
+            title: copied ? tr("Copié") : tr("Copier"), icon: copied ? .check : .copy,
             kind: prominent ? .primary : .secondary, sound: .confirm
         ) {
             Paster.copy(text)
@@ -725,13 +728,13 @@ struct PermissionsCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Deux autorisations pour commencer").font(UI.sans(14, .medium))
+                Text(tr("Deux autorisations pour commencer")).font(UI.sans(14, .medium))
                 PermissionRow(
-                    title: "Microphone", detail: "Pour entendre ta voix.", granted: settings.microphoneGranted,
+                    title: tr("Microphone"), detail: tr("Pour entendre ta voix."), granted: settings.microphoneGranted,
                     action: settings.requestMicrophone)
                 Rectangle().fill(UI.line).frame(height: 1)
                 PermissionRow(
-                    title: "Accessibilité", detail: "Pour coller le texte dans le champ actif.",
+                    title: tr("Accessibilité"), detail: tr("Pour coller le texte dans le champ actif."),
                     granted: settings.accessibilityGranted, action: settings.requestAccessibility)
             }
         }
@@ -754,12 +757,12 @@ struct PermissionRow: View {
             if granted {
                 HStack(spacing: 6) {
                     Icon(.circleCheck, size: 15)
-                    Text("Accordée").font(UI.sans(13, .medium))
+                    Text(tr("Accordée")).font(UI.sans(13, .medium))
                 }
                 .foregroundStyle(UI.success)
                 .transition(.scale.combined(with: .opacity))
             } else {
-                PlumeButton(title: "Autoriser", kind: .primary, action: action)
+                PlumeButton(title: tr("Autoriser"), kind: .primary, action: action)
             }
         }
         .animation(UI.spring, value: granted)

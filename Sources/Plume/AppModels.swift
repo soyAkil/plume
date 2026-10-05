@@ -6,16 +6,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum Page: String, CaseIterable, Identifiable {
-    case home, history, vocabulary, settings
+    case home, history, vocabulary, apps, settings
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .home: return "Accueil"
-        case .history: return "Historique"
-        case .vocabulary: return "Vocabulaire"
-        case .settings: return "Réglages"
+        case .home: return tr("Accueil")
+        case .history: return tr("Historique")
+        case .vocabulary: return tr("Vocabulaire")
+        case .apps: return tr("Applications")
+        case .settings: return tr("Réglages")
         }
     }
 
@@ -24,6 +25,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .home: return .home
         case .history: return .history
         case .vocabulary: return .book
+        case .apps: return .appWindow
         case .settings: return .sliders
         }
     }
@@ -88,8 +90,8 @@ final class AppModel: ObservableObject {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.audio, .movie]
-        panel.prompt = "Transcrire"
-        panel.message = "Choisis un ou plusieurs fichiers audio à transcrire."
+        panel.prompt = tr("Transcrire")
+        panel.message = tr("Choisis un ou plusieurs fichiers audio à transcrire.")
         if panel.runModal() == .OK { importFiles(panel.urls) }
     }
 }
@@ -101,10 +103,10 @@ enum HistoryFilter: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: return "Tout"
-        case .dictation: return "Dictées"
-        case .meeting: return "Réunions"
-        case .imported: return "Imports"
+        case .all: return tr("Tout")
+        case .dictation: return tr("Dictées")
+        case .meeting: return tr("Réunions")
+        case .imported: return tr("Imports")
         }
     }
 
@@ -169,6 +171,79 @@ final class LibraryModel: ObservableObject {
         reload()
     }
 
+    /// Donne (ou retire) un titre à une transcription.
+    func retitle(_ transcript: Transcript, to title: String) {
+        guard var updated = store.load(id: transcript.id) else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.title = trimmed.isEmpty ? nil : trimmed
+        try? store.save(updated)
+        reload()
+    }
+
+    /// Transcriptions dont on refait la transcription ou le résumé.
+    @Published var working = Set<String>()
+
+    /// Retranscrit l'audio conservé avec le modèle actuel (modèle changé, premier résultat raté).
+    func retranscribe(_ transcript: Transcript) {
+        guard !working.contains(transcript.id), let url = audioURLs(for: transcript).first else { return }
+        working.insert(transcript.id)
+        player.stop()
+        let settings = PlumeSettings.shared
+        Task {
+            do {
+                let engine = SpeechEngine.shared
+                try await engine.prepare(model: settings.model)
+                let samples = try AudioIO.loadSamples(url)
+                guard var updated = store.load(id: transcript.id) else { return }
+                if transcript.mode == .dictation {
+                    let result = try await Pipeline.dictation(
+                        samples: samples, engine: engine, options: DictationOptions(settings: settings))
+                    updated.text = result.text
+                    updated.rawText = result.raw
+                } else {
+                    _ = try await Pipeline.reprocess(transcript, speakerCount: nil)
+                    updated = store.load(id: transcript.id) ?? updated
+                }
+                updated.engine = await engine.modelName
+                try store.save(updated)
+            } catch {
+                Log.write("nouvelle transcription impossible : \(error.localizedDescription)")
+            }
+            working.remove(transcript.id)
+            reload()
+        }
+    }
+
+    /// Résume avec l'IA locale (points clés, décisions, actions) et propose un titre.
+    func summarize(_ transcript: Transcript) {
+        guard !working.contains(transcript.id) else { return }
+        working.insert(transcript.id)
+        Task {
+            do {
+                let summary = try await LocalAI.summarize(transcript)
+                if var updated = store.load(id: transcript.id) {
+                    updated.summary = summary.markdown
+                    if updated.title == nil { updated.title = summary.title }
+                    try store.save(updated)
+                }
+            } catch {
+                Log.write("résumé impossible : \(error.localizedDescription)")
+            }
+            working.remove(transcript.id)
+            reload()
+        }
+    }
+
+    /// Enregistre la transcription dans le format choisi, là où l'utilisateur le décide.
+    func export(_ transcript: Transcript, as format: ExportFormat) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = Exporter.fileName(for: transcript, format: format)
+        panel.canCreateDirectories = true
+        panel.prompt = tr("Exporter")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? Exporter.render(transcript, as: format).write(to: url, atomically: true, encoding: .utf8)
+    }
+
     /// Réécoute l'audio conservé pour refaire la séparation des voix, éventuellement avec un
     /// nombre de personnes imposé.
     func reprocess(_ transcript: Transcript, speakers: Int?) {
@@ -204,17 +279,17 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    private static let dayFormatter: DateFormatter = {
+    private static var dayFormatter: DateFormatter {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "fr_FR")
-        f.dateFormat = "EEEE d MMMM"
+        f.locale = L10n.current.locale
+        f.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
         return f
-    }()
+    }
 
     static func dayTitle(_ day: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Aujourd'hui" }
-        if calendar.isDateInYesterday(day) { return "Hier" }
+        if calendar.isDateInToday(day) { return tr("Aujourd'hui") }
+        if calendar.isDateInYesterday(day) { return tr("Hier") }
         let text = dayFormatter.string(from: day)
         return text.prefix(1).uppercased() + text.dropFirst()
     }
@@ -319,26 +394,56 @@ final class SettingsModel: ObservableObject {
     var onModelChanged: () -> Void = {}
     var onRecordingShortcut: (Bool) -> Void = { _ in }
     var onAppearanceChanged: () -> Void = {}
+    var onRulesChanged: () -> Void = {}
+    var onLanguageChanged: () -> Void = {}
+
+    /// Langue de l'interface ; la fenêtre se redessine entièrement quand elle change.
+    @Published var language: Language {
+        didSet {
+            settings.language = language
+            L10n.current = language
+            onLanguageChanged()
+        }
+    }
 
     @Published var dictationShortcut: Shortcut { didSet { settings.dictationShortcut = dictationShortcut; onShortcutsChanged() } }
     @Published var meetingShortcut: Shortcut { didSet { settings.meetingShortcut = meetingShortcut; onShortcutsChanged() } }
     @Published var openShortcut: Shortcut { didSet { settings.openShortcut = openShortcut; onShortcutsChanged() } }
+    @Published var pasteLastShortcut: Shortcut { didSet { settings.pasteLastShortcut = pasteLastShortcut; onShortcutsChanged() } }
+    @Published var transformShortcut: Shortcut { didSet { settings.transformShortcut = transformShortcut; onShortcutsChanged() } }
     @Published var liveTranscript: Bool { didSet { settings.liveTranscript = liveTranscript } }
     @Published var modeSwitchAtStart: Bool { didSet { settings.modeSwitchAtStart = modeSwitchAtStart } }
     @Published var pasteAfterDictation: Bool { didSet { settings.pasteAfterDictation = pasteAfterDictation } }
     @Published var restoreClipboard: Bool { didSet { settings.restoreClipboard = restoreClipboard } }
     @Published var cleanup: Bool { didSet { settings.cleanup = cleanup } }
+    @Published var voiceCommands: Bool { didSet { settings.voiceCommands = voiceCommands } }
+    @Published var smartInsert: Bool { didSet { settings.smartInsert = smartInsert } }
+    @Published var streamingPaste: Bool { didSet { settings.streamingPaste = streamingPaste } }
+    @Published var muteWhileDictating: Bool { didSet { settings.muteWhileDictating = muteWhileDictating } }
+    @Published var meetingDetection: Bool { didSet { settings.meetingDetection = meetingDetection } }
+    @Published var polish: Bool { didSet { settings.polish = polish } }
+    @Published var polishInstructions: String { didSet { settings.polishInstructions = polishInstructions } }
+    @Published var autoSummary: Bool { didSet { settings.autoSummary = autoSummary } }
+    @Published var audioRetentionDays: Int { didSet { settings.audioRetentionDays = audioRetentionDays } }
     @Published var sounds: Bool { didSet { settings.sounds = sounds } }
     @Published var soundVolume: Double { didSet { settings.soundVolume = soundVolume } }
     @Published var soundPack: SoundPack { didSet { settings.soundPack = soundPack.rawValue } }
     @Published var systemAudio: Bool { didSet { settings.systemAudioInMeeting = systemAudio } }
     @Published var keepAudio: Bool { didSet { settings.keepAudio = keepAudio } }
+    @Published var keepHistory: Bool { didSet { settings.keepHistory = keepHistory } }
     @Published var model: EngineModel { didSet { settings.model = model; onModelChanged() } }
+    /// Dossier du modèle personnalisé (chaîne vide : aucun).
+    @Published var customModelPath: String
+    /// Ce qui cloche avec le dossier de modèle choisi, le cas échéant.
+    @Published var modelMessage: String?
     @Published var appearance: String { didSet { settings.appearance = appearance; onAppearanceChanged() } }
     /// Micro choisi : identifiant du périphérique, ou chaîne vide pour le micro intégré du Mac.
     @Published var microphoneUID: String { didSet { settings.microphoneUID = microphoneUID.isEmpty ? nil : microphoneUID } }
     @Published private(set) var microphones: [InputDevice] = AudioDevices.inputs()
     @Published var replacements: [Replacement] { didSet { ReplacementStore.save(replacements) } }
+    @Published var rules: [AppRule] { didSet { AppRuleStore.save(rules); onRulesChanged() } }
+    /// L'IA locale : disponible, ou pourquoi pas.
+    @Published private(set) var ai = LocalAI.availability
     @Published var libraryPath: String
     @Published var launchAtLogin: Bool
     @Published var microphoneGranted = Permissions.microphoneGranted
@@ -356,22 +461,82 @@ final class SettingsModel: ObservableObject {
         dictationShortcut = settings.dictationShortcut
         meetingShortcut = settings.meetingShortcut
         openShortcut = settings.openShortcut
+        pasteLastShortcut = settings.pasteLastShortcut
+        transformShortcut = settings.transformShortcut
         liveTranscript = settings.liveTranscript
         modeSwitchAtStart = settings.modeSwitchAtStart
         pasteAfterDictation = settings.pasteAfterDictation
         restoreClipboard = settings.restoreClipboard
         cleanup = settings.cleanup
+        voiceCommands = settings.voiceCommands
+        smartInsert = settings.smartInsert
+        streamingPaste = settings.streamingPaste
+        muteWhileDictating = settings.muteWhileDictating
+        meetingDetection = settings.meetingDetection
+        polish = settings.polish
+        polishInstructions = settings.polishInstructions
+        autoSummary = settings.autoSummary
+        audioRetentionDays = settings.audioRetentionDays
+        rules = AppRuleStore.load()
         sounds = settings.sounds
         soundVolume = settings.soundVolume
         soundPack = SoundPack(rawValue: settings.soundPack) ?? .standard
         systemAudio = settings.systemAudioInMeeting
         keepAudio = settings.keepAudio
+        keepHistory = settings.keepHistory
         model = settings.model
+        customModelPath = settings.customModelURL?.path ?? ""
+        language = settings.language
         appearance = settings.appearance
         microphoneUID = settings.microphoneUID ?? ""
         libraryPath = settings.libraryURL.path
         replacements = ReplacementStore.load()
         launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    /// Ce que Plume garde d'une dictée : tout, le texte, ou rien.
+    enum Retention: String, CaseIterable, Identifiable {
+        case textAndAudio, textOnly, nothing
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .textAndAudio: return tr("Le texte et l'audio")
+            case .textOnly: return tr("Le texte seulement")
+            case .nothing: return tr("Rien")
+            }
+        }
+    }
+
+    var retention: Retention {
+        get { !keepHistory ? .nothing : (keepAudio ? .textAndAudio : .textOnly) }
+        set {
+            keepHistory = newValue != .nothing
+            keepAudio = newValue == .textAndAudio
+        }
+    }
+
+    // MARK: Modèle
+
+    /// Choisit le dossier d'un modèle au format Parakeet, et passe dessus s'il est complet.
+    func chooseModelDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = tr("Utiliser ce modèle")
+        panel.message = tr("Choisis le dossier qui contient Preprocessor, Encoder, Decoder, JointDecision (.mlmodelc) et parakeet_vocab.json.")
+        if let current = settings.customModelURL { panel.directoryURL = current }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let missing = SpeechEngine.missingCustomFiles(in: url)
+        guard missing.isEmpty else {
+            modelMessage = "Il manque \(missing.joined(separator: ", ")) dans ce dossier."
+            return
+        }
+        modelMessage = nil
+        settings.customModelURL = url
+        customModelPath = url.path
+        if model == .custom { onModelChanged() } else { model = .custom }
     }
 
     var permissionsMissing: Bool { !microphoneGranted || !accessibilityGranted }
@@ -421,7 +586,7 @@ final class SettingsModel: ObservableObject {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Choisir"
+        panel.prompt = tr("Choisir")
         panel.directoryURL = settings.libraryURL
         if panel.runModal() == .OK, let url = panel.url {
             settings.libraryURL = url
@@ -431,6 +596,116 @@ final class SettingsModel: ObservableObject {
 
     func addReplacement() {
         replacements.append(Replacement(original: "", with: ""))
+    }
+
+    func refreshAI() {
+        let now = LocalAI.availability
+        if now != ai { ai = now }
+    }
+
+    // MARK: Applications
+
+    /// Choisit une app dans le Finder et lui crée une règle (une seule par app).
+    func addRule() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = tr("Ajouter")
+        panel.message = tr("Choisis les applications qui ont leur propre réglage de dictée.")
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier, !rules.contains(where: { $0.bundleID == id })
+            else { continue }
+            let name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+            rules.append(AppRule(bundleID: id, name: name, style: Self.suggestedStyle(for: id)))
+        }
+    }
+
+    /// La règle « toutes les autres applications », créée au besoin.
+    func addDefaultRule() {
+        guard !rules.contains(where: { $0.bundleID == "*" }) else { return }
+        rules.append(AppRule(bundleID: "*", name: tr("Toutes les autres applications")))
+    }
+
+    /// Les messageries ont tout de suite le style « message ».
+    static func suggestedStyle(for bundleID: String) -> DictationStyle {
+        let messaging = ["slack", "messages", "whatsapp", "telegram", "discord", "ichat", "signal", "teams", "messenger"]
+        return messaging.contains(where: { bundleID.lowercased().contains($0) }) ? .message : .standard
+    }
+
+    /// L'icône de l'app, si elle est installée.
+    func icon(for rule: AppRule) -> NSImage? {
+        guard rule.bundleID != "*", let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: rule.bundleID)
+        else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    // MARK: Sauvegarde des réglages
+
+    /// Écrit tous les réglages (raccourcis, options, vocabulaire, applications) dans un fichier,
+    /// pour les retrouver sur un autre Mac.
+    func exportSettings() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = tr("Réglages Plume.json")
+        panel.prompt = tr("Enregistrer")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SettingsBackup.export(to: url)
+            integrationMessage = nil
+        } catch {
+            integrationMessage = "Les réglages n'ont pas pu être enregistrés : \(error.localizedDescription)"
+        }
+    }
+
+    func importSettings() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.prompt = tr("Importer")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SettingsBackup.import(from: url)
+            reloadFromSettings()
+            onShortcutsChanged()
+            onRulesChanged()
+        } catch {
+            integrationMessage = "Ce fichier n'a pas pu être lu : \(error.localizedDescription)"
+        }
+    }
+
+    /// Relit les réglages depuis le disque, après un import.
+    private func reloadFromSettings() {
+        dictationShortcut = settings.dictationShortcut
+        meetingShortcut = settings.meetingShortcut
+        openShortcut = settings.openShortcut
+        pasteLastShortcut = settings.pasteLastShortcut
+        transformShortcut = settings.transformShortcut
+        liveTranscript = settings.liveTranscript
+        modeSwitchAtStart = settings.modeSwitchAtStart
+        pasteAfterDictation = settings.pasteAfterDictation
+        restoreClipboard = settings.restoreClipboard
+        cleanup = settings.cleanup
+        voiceCommands = settings.voiceCommands
+        smartInsert = settings.smartInsert
+        streamingPaste = settings.streamingPaste
+        muteWhileDictating = settings.muteWhileDictating
+        meetingDetection = settings.meetingDetection
+        polish = settings.polish
+        polishInstructions = settings.polishInstructions
+        autoSummary = settings.autoSummary
+        audioRetentionDays = settings.audioRetentionDays
+        sounds = settings.sounds
+        soundVolume = settings.soundVolume
+        soundPack = SoundPack(rawValue: settings.soundPack) ?? .standard
+        systemAudio = settings.systemAudioInMeeting
+        keepAudio = settings.keepAudio
+        keepHistory = settings.keepHistory
+        model = settings.model
+        language = settings.language
+        appearance = settings.appearance
+        replacements = ReplacementStore.load()
+        rules = AppRuleStore.load()
     }
 
     // MARK: Terminal et assistants
@@ -466,9 +741,9 @@ final class SettingsModel: ObservableObject {
     func connectClaudeDesktop() {
         do {
             try Integrations.connectClaudeDesktop()
-            integrationMessage = "Claude Desktop verra Plume à son prochain lancement."
+            integrationMessage = tr("Claude Desktop verra Plume à son prochain lancement.")
         } catch {
-            integrationMessage = "La configuration de Claude Desktop n'a pas pu être modifiée."
+            integrationMessage = tr("La configuration de Claude Desktop n'a pas pu être modifiée.")
         }
         refreshIntegrations()
     }

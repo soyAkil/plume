@@ -14,10 +14,7 @@ public struct Replacement: Codable, Sendable, Identifiable, Equatable {
 }
 
 public enum ReplacementStore {
-    public static var url: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("Plume", isDirectory: true).appendingPathComponent("remplacements.json")
-    }
+    public static var url: URL { PlumeSettings.supportDirectory.appendingPathComponent("remplacements.json") }
 
     public static func load() -> [Replacement] {
         if let data = try? Data(contentsOf: url),

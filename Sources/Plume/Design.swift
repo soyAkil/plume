@@ -37,6 +37,8 @@ enum UI {
     /// Texte posé sur un bouton plein (qui prend la couleur du texte).
     static let onText = dynamic(light: 0xFFFFFF, dark: 0x111111)
     static let success = Color(red: 0x22 / 255, green: 0xC5 / 255, blue: 0x5E / 255)
+    /// Étiquette « bêta » : un mauve, lisible sur les deux fonds.
+    static let beta = dynamic(light: 0x7C4DCC, dark: 0xC9A7FF)
     /// Intensité d'activité, de la plus faible à la plus forte : du gris discret à la couleur du texte.
     static let activity: [Color] = [
         dynamic(light: 0xD0D0D0, dark: 0x3A3A3A),

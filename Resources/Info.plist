@@ -28,6 +28,17 @@
     <string>Fonts</string>
     <key>LSUIElement</key>
     <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>Commandes Plume</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>plume</string>
+            </array>
+        </dict>
+    </array>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>

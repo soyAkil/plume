@@ -27,7 +27,8 @@ public enum Importer {
 
         var transcript: Transcript
         if mode == .dictation {
-            let result = try await Pipeline.dictation(samples: samples, engine: engine, cleanup: settings.cleanup)
+            let result = try await Pipeline.dictation(
+                samples: samples, engine: engine, options: DictationOptions(settings: settings))
             transcript = Transcript(
                 id: id, createdAt: date, mode: .dictation, device: device, duration: duration,
                 engine: await engine.modelName, text: result.text, rawText: result.raw)

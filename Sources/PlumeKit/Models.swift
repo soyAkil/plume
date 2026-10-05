@@ -10,9 +10,9 @@ public enum RecordingMode: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .dictation: return "Dictée"
-        case .meeting: return "Réunion"
-        case .imported: return "Import"
+        case .dictation: return tr("Dictée")
+        case .meeting: return tr("Réunion")
+        case .imported: return tr("Import")
         }
     }
 
@@ -89,11 +89,15 @@ public struct Transcript: Codable, Sendable, Identifiable, Equatable {
     public var audioFiles: [String]
     /// Application au premier plan au moment de la dictée.
     public var app: String?
+    /// Titre donné par l'utilisateur ou proposé par l'IA locale (sinon, la date fait office de titre).
+    public var title: String?
+    /// Résumé en Markdown (points clés, décisions, actions), écrit par l'IA locale.
+    public var summary: String?
 
     public init(
         id: String, createdAt: Date, mode: RecordingMode, device: String = "mac", duration: Double,
         engine: String, text: String, rawText: String, segments: [Segment] = [], speakers: [String] = [],
-        audioFiles: [String] = [], app: String? = nil
+        audioFiles: [String] = [], app: String? = nil, title: String? = nil, summary: String? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -107,6 +111,8 @@ public struct Transcript: Codable, Sendable, Identifiable, Equatable {
         self.speakers = speakers
         self.audioFiles = audioFiles
         self.app = app
+        self.title = title
+        self.summary = summary
     }
 
     /// Première ligne utile, pour les listes.

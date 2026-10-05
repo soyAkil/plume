@@ -7,12 +7,16 @@ enum HotkeyAction: Int {
     case meeting = 2
     /// Ouvre la fenêtre de Plume.
     case open = 3
+    /// Recolle la dernière dictée.
+    case pasteLast = 4
+    /// Dicte une consigne que l'IA locale applique au texte sélectionné.
+    case transform = 5
 
     var mode: RecordingMode? {
         switch self {
-        case .dictation: return .dictation
+        case .dictation, .transform: return .dictation
         case .meeting: return .meeting
-        case .open: return nil
+        case .open, .pasteLast: return nil
         }
     }
 }
@@ -89,6 +93,8 @@ final class HotkeyManager {
         register(settings.dictationShortcut, for: .dictation)
         register(settings.meetingShortcut, for: .meeting)
         register(settings.openShortcut, for: .open)
+        register(settings.pasteLastShortcut, for: .pasteLast)
+        register(settings.transformShortcut, for: .transform)
     }
 
     private func register(_ shortcut: Shortcut, for action: HotkeyAction) {
@@ -279,7 +285,7 @@ final class HotkeyManager {
 
     /// `⌃⌥` ou `⌥Espace`.
     static func describe(_ shortcut: Shortcut) -> String {
-        guard !shortcut.isEmpty else { return "Aucun" }
+        guard !shortcut.isEmpty else { return tr("Aucun") }
         var text = ""
         if shortcut.modifiers & ModifierMask.control != 0 { text += "⌃" }
         if shortcut.modifiers & ModifierMask.option != 0 { text += "⌥" }

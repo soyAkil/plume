@@ -441,3 +441,245 @@ struct FormatTests {
         #expect(RecordingMode(slug: "autre") == nil)
     }
 }
+
+@Suite("Commandes vocales")
+struct VoiceCommandsTests {
+    func run(_ text: String) -> String { VoiceCommands.apply(to: text).text }
+
+    @Test func sautsDeLigneEtParagraphes() {
+        #expect(run("Bonjour Marc, à la ligne, je voulais te dire que c'est validé.") == "Bonjour Marc,\nJe voulais te dire que c'est validé.")
+        #expect(run("C'est validé. Nouveau paragraphe. On se voit jeudi.") == "C'est validé.\n\nOn se voit jeudi.")
+        #expect(run("Merci à la ligne bonne journée") == "Merci\nBonne journée")
+        #expect(run("Hello team, new line, the release is ready. New paragraph. See you.") == "Hello team,\nThe release is ready.\n\nSee you.")
+        #expect(run("c'est fini point à la ligne et voilà") == "c'est fini.\nEt voilà")
+    }
+
+    @Test func neConfondPasAvecLeLangageCourant() {
+        #expect(run("Il adore la pêche à la ligne.") == "Il adore la pêche à la ligne.")
+        #expect(run("Regarde à la ligne 42 du fichier.") == "Regarde à la ligne 42 du fichier.")
+        #expect(run("On passe à la ligne suivante.") == "On passe à la ligne suivante.")
+        #expect(run("La nouvelle ligne de produits sort en mai.") == "La nouvelle ligne de produits sort en mai.")
+        #expect(run("Il faut un nouveau paragraphe ici.") == "Il faut un nouveau paragraphe ici.")
+        #expect(run("J'ai deux points de vue là-dessus.") == "J'ai deux points de vue là-dessus.")
+    }
+
+    @Test func ponctuationDictée() {
+        #expect(run("Tu viens demain point d'interrogation") == "Tu viens demain ?")
+        #expect(run("Génial point d'exclamation on y va") == "Génial ! on y va")
+        #expect(run("Liste de courses, deux points, à la ligne, tiret, des pâtes, à la ligne, tiret, des tomates") == "Liste de courses :\n- des pâtes\n- des tomates")
+        #expect(run("Il a dit ouvrez les guillemets c'est parfait fermez les guillemets.") == "Il a dit « c'est parfait ».")
+        #expect(run("Nouvelle puce premier point nouvelle puce deuxième point") == "\n- premier point\n- deuxième point")
+    }
+
+    @Test func effaceÇa() {
+        #expect(run("Je passe demain matin. Non en fait je passe demain soir. Efface ça. Je passe jeudi.") == "Je passe demain matin. Je passe jeudi.")
+        #expect(run("Première idée. Efface ça.") == "")
+        #expect(run("Bonjour. Deuxième phrase, efface ça, troisième phrase.") == "Bonjour. Troisième phrase.")
+        #expect(run("Tout un texte. Efface tout. On repart.") == "On repart.")
+        #expect(run("Il faut que j'efface ça de la liste.") == "Il faut que j'efface ça de la liste.")
+        #expect(run("Hello there. Scratch that. Hi.") == "Hi.")
+    }
+
+    @Test func appuieSurEntrée() {
+        let result = VoiceCommands.apply(to: "On se voit demain. Appuie sur Entrée.")
+        #expect(result.text == "On se voit demain.")
+        #expect(result.pressReturn)
+        #expect(VoiceCommands.apply(to: "Ok, press enter").pressReturn)
+        #expect(!VoiceCommands.apply(to: "Il faut appuyer sur Entrée pour valider le formulaire.").pressReturn)
+    }
+}
+
+@Suite("Styles et insertion")
+struct StyleTests {
+    @Test func styles() {
+        #expect(TextStyle.apply(.message, to: "Salut, on se voit demain.") == "Salut, on se voit demain")
+        #expect(TextStyle.apply(.message, to: "Tu viens ?") == "Tu viens ?")
+        #expect(TextStyle.apply(.message, to: "Attends…") == "Attends…")
+        #expect(TextStyle.apply(.casual, to: "Salut. Je passe à 10 h. L'URL est bonne. I think so.") == "salut. je passe à 10 h. l'URL est bonne. I think so")
+        #expect(TextStyle.apply(.standard, to: "Tel quel.") == "Tel quel.")
+    }
+
+    @Test func règleParApplication() {
+        let rules = [
+            AppRule(bundleID: "com.tinyspeck.slackmacgap", name: "Slack", style: .message),
+            AppRule(bundleID: "*", name: "Autres", style: .casual),
+        ]
+        #expect(AppRuleStore.rule(for: "com.tinyspeck.slackmacgap", in: rules)?.style == .message)
+        #expect(AppRuleStore.rule(for: "com.apple.mail", in: rules)?.style == .casual)
+        #expect(AppRuleStore.rule(for: nil, in: rules)?.bundleID == "*")
+        #expect(AppRuleStore.rule(for: "x", in: [rules[0]]) == nil)
+    }
+
+    @Test func insertionIntelligente() {
+        let text = "Je passe demain."
+        #expect(SmartInsert.adapt(text, context: .empty) == text)
+        #expect(SmartInsert.adapt(text, context: InsertionContext(before: "Bonjour.")) == " Je passe demain.")
+        #expect(SmartInsert.adapt(text, context: InsertionContext(before: "Bonjour. ")) == "Je passe demain.")
+        #expect(SmartInsert.adapt(text, context: InsertionContext(before: "Comme prévu,")) == " je passe demain.")
+        #expect(SmartInsert.adapt(text, context: InsertionContext(before: "Comme prévu, ", after: "et je reste.")) == "je passe demain ")
+        #expect(SmartInsert.adapt(text, context: InsertionContext(before: "Note :\n")) == "Je passe demain.")
+        #expect(SmartInsert.adapt("Paris est loin.", context: InsertionContext(before: "Je crois que")) == " Paris est loin.")
+        #expect(SmartInsert.adapt(text, context: InsertionContext(before: "(")) == "Je passe demain.")
+        #expect(SmartInsert.adapt(text, context: InsertionContext(before: "donc", after: "\nSuite")) == " je passe demain.")
+    }
+
+    @Test func miseEnFormeComplète() {
+        let options = DictationOptions(cleanup: true, voiceCommands: true, style: .message)
+        let result = Pipeline.format("euh bonjour Marc, à la ligne, c'est c'est validé. Appuie sur entrée.", options: options, replacements: [])
+        #expect(result.text == "Bonjour Marc,\nC'est validé")
+        #expect(result.pressReturn)
+    }
+}
+
+@Suite("Export et entretien")
+struct ExportTests {
+    let meeting: Transcript = {
+        let segments = [
+            Segment(id: 0, speaker: "Moi", channel: .mic, start: 0, end: 2.5, text: "On valide le budget ?"),
+            Segment(id: 1, speaker: "Inès", channel: .system, start: 2.5, end: 4, text: "Oui, validé."),
+        ]
+        return Transcript(
+            id: "2026-10-02_11-30-00", createdAt: Date(), mode: .meeting, duration: 4, engine: "t",
+            text: TranscriptBuilder.text(for: segments), rawText: "", segments: segments, speakers: ["Moi", "Inès"],
+            title: "Point budget", summary: "## Points clés\n- Budget validé")
+    }()
+
+    @Test func sousTitres() {
+        let srt = Exporter.render(meeting, as: .subtitles)
+        #expect(srt.hasPrefix("1\n00:00:00,000 --> 00:00:02,500\nMoi : On valide le budget ?\n"))
+        #expect(srt.contains("2\n00:00:02,500 --> 00:00:04,000\nInès : Oui, validé."))
+        let vtt = Exporter.render(meeting, as: .webSubtitles)
+        #expect(vtt.hasPrefix("WEBVTT\n\n00:00:00.000 --> 00:00:02.500"))
+        #expect(Exporter.fileName(for: meeting, format: .subtitles) == "2026-10-02_11-30-00 Point budget.srt")
+    }
+
+    @Test func découpeLesLonguesRépliques() {
+        let long = Transcript(
+            id: "x", createdAt: Date(), mode: .imported, duration: 20, engine: "t",
+            text: String(repeating: "mot ", count: 60).trimmingCharacters(in: .whitespaces), rawText: "")
+        let cues = Exporter.cues(for: long)
+        #expect(cues.count == 3)
+        #expect(cues.allSatisfy { $0.text.count <= Exporter.maxCueCharacters })
+        #expect(abs((cues.last?.end ?? 0) - 20) < 0.001)
+    }
+
+    @Test func markdownAvecRésuméEtTitre() {
+        let md = TranscriptStore.markdown(for: meeting)
+        #expect(md.contains("# Point budget\nRéunion du"))
+        #expect(md.contains("## Résumé\n\n## Points clés\n- Budget validé\n\n## Transcription"))
+        #expect(Exporter.render(meeting, as: .text).hasPrefix("Point budget\n\n## Points clés"))
+    }
+
+    @Test func supprimeLAudioAncien() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-tests-\(UUID().uuidString)")
+        let store = TranscriptStore(root: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let old = Date().addingTimeInterval(-40 * 86_400)
+        let recent = Date().addingTimeInterval(-2 * 86_400)
+        for (date, name) in [(old, "ancien"), (recent, "récent")] {
+            let id = store.makeID(for: date)
+            let directory = try store.ensureDirectory(forID: id)
+            try Data([0, 1]).write(to: directory.appendingPathComponent("\(id)_mic.m4a"))
+            try store.save(
+                Transcript(
+                    id: id, createdAt: date, mode: .dictation, duration: 1, engine: "t", text: name, rawText: "",
+                    audioFiles: ["\(id)_mic.m4a"]))
+        }
+        #expect(store.dropAudio(olderThan: Date().addingTimeInterval(-30 * 86_400)) == 1)
+        let items = store.list()
+        #expect(items.first { $0.text == "ancien" }?.audioFiles.isEmpty == true)
+        #expect(items.first { $0.text == "récent" }?.audioFiles.count == 1)
+        #expect(store.audioURLs(for: items.first { $0.text == "récent" }!).allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+    }
+}
+
+@Suite("Sauvegarde des réglages")
+struct SettingsBackupTests {
+    @Test func allerRetour() throws {
+        let file = SettingsBackup.File(
+            date: Date(), shortcuts: ["dictationShortcut": Shortcut(keyCode: 49, modifiers: ModifierMask.option)],
+            booleans: ["voiceCommands": false, "pasInconnu": true], numbers: ["audioRetentionDays": 30], strings: ["soundPack": "bips"],
+            replacements: [Replacement(original: "a", with: "b")], rules: [AppRule(bundleID: "*", name: "Autres", style: .message)])
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(SettingsBackup.File.self, from: try encoder.encode(file))
+        #expect(decoded.shortcuts["dictationShortcut"]?.keyCode == 49)
+        #expect(decoded.rules.first?.style == .message)
+        #expect(decoded.replacements == file.replacements)
+    }
+}
+
+@Suite("IA locale, sans modèle")
+struct LocalAITests {
+    @Test func découpeAuxParagraphes() {
+        let paragraph = String(repeating: "Une phrase courte. ", count: 20)
+        let text = (0..<12).map { _ in paragraph }.joined(separator: "\n")
+        let chunks = LocalAI.chunks(of: text, limit: 1_000)
+        #expect(chunks.count >= 4)
+        #expect(chunks.allSatisfy { $0.count <= 1_000 })
+        #expect(chunks.joined(separator: "\n").replacingOccurrences(of: "\n", with: " ") == text.replacingOccurrences(of: "\n", with: " "))
+        #expect(LocalAI.chunks(of: "court") == ["court"])
+    }
+
+    @Test func nettoieLaRéponse() {
+        #expect(LocalAI.stripped("Voici le texte corrigé : Bonjour.") == "Bonjour.")
+        #expect(LocalAI.stripped("```\nBonjour.\n```") == "Bonjour.")
+        #expect(LocalAI.stripped("« Bonjour. »") == "Bonjour.")
+        #expect(LocalAI.plausible("Bonjour Marc, ça va ?", for: "bonjour marc ça va"))
+        #expect(!LocalAI.plausible("", for: "bonjour"))
+        #expect(!LocalAI.plausible(String(repeating: "x", count: 400), for: String(repeating: "y", count: 100)))
+    }
+}
+
+extension LocalAITests {
+    @Test func remetLeMarkdownDAplomb() {
+        let raw = "- ## Points clés\n  - La page est prête.\n  * Annonce jeudi.\n\n\n- ## Actions\n  - Thomas : captures."
+        #expect(LocalAI.tidyMarkdown(raw) == "## Points clés\n- La page est prête.\n- Annonce jeudi.\n\n## Actions\n- Thomas : captures.")
+    }
+}
+
+@Suite("Modèles de transcription")
+struct EngineModelTests {
+    @Test func tousDécritsEtLePersonnaliséEnDernier() {
+        #expect(EngineModel.allCases.allSatisfy { !$0.label.isEmpty && !$0.detail.isEmpty })
+        #expect(EngineModel.allCases.last == .custom)
+        #expect(EngineModel.allCases.filter { !$0.isBuiltIn } == [.custom])
+        #expect(EngineModel(rawValue: "parakeet-ultra") == .parakeetUltra)
+    }
+
+    @Test func dossierPersonnaliséIncomplet() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("plume-modele-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(SpeechEngine.missingCustomFiles(in: directory).count == 4)
+        try FileManager.default.createDirectory(at: directory.appendingPathComponent("Preprocessor.mlmodelc"), withIntermediateDirectories: true)
+        #expect(SpeechEngine.missingCustomFiles(in: directory).first == "Decoder.mlmodelc")
+        #expect(!EngineModel.custom.isAvailableOffline(customDirectory: directory))
+        #expect(!EngineModel.custom.isAvailableOffline(customDirectory: nil))
+    }
+}
+
+@Suite("Langue de l'interface", .serialized)
+struct LocalizationTests {
+    @Test func traduitEnAnglaisEtRevientAuFrançais() {
+        let before = L10n.current
+        defer { L10n.current = before }
+        L10n.current = .english
+        #expect(tr("Historique") == "History")
+        #expect(tr("Chaîne inconnue de la table") == "Chaîne inconnue de la table")
+        #expect(TranscriptBuilder.speakerName(1) == "Speaker 1")
+        #expect(TranscriptBuilder.meName == "Me")
+        #expect(RecordingMode.meeting.label == "Meeting")
+        L10n.current = .french
+        #expect(tr("Historique") == "Historique")
+        #expect(TranscriptBuilder.speakerName(1) == "Interlocuteur 1")
+        #expect(TranscriptBuilder.isMe("Me") && TranscriptBuilder.isMe("Moi") && !TranscriptBuilder.isMe("Inès"))
+    }
+
+    @Test func aucuneTraductionVide() {
+        #expect(L10n.missing.isEmpty)
+        #expect(Language.english.locale.identifier == "en_US")
+    }
+}

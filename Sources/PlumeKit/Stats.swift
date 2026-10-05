@@ -50,7 +50,7 @@ public struct LibraryStats: Sendable, Equatable {
             // Pour une réunion, seul ce que le propriétaire a dit compte comme « dicté ».
             let spoken: Int
             if t.speakers.count > 1 {
-                spoken = t.segments.filter { $0.speaker == "Moi" }.reduce(0) { $0 + Self.wordCount($1.text) }
+                spoken = t.segments.filter { TranscriptBuilder.isMe($0.speaker) }.reduce(0) { $0 + Self.wordCount($1.text) }
             } else {
                 spoken = Self.wordCount(t.text)
             }

@@ -31,15 +31,20 @@ change, regarder un rendu `plume render … --demo`.
 
 ## Conventions
 
-- Code, commentaires, messages et interface **en français**, tutoiement dans l'interface.
-  Commentaires en `///`, qui expliquent le pourquoi. Calque-toi sur le style du fichier.
+- Code, commentaires et messages **en français**. Les textes de l'interface s'écrivent en
+  français dans le code, enveloppés dans `tr("…")`, avec leur traduction anglaise dans
+  `PlumeKit/L10nTable.swift` : l'anglais est la langue par défaut de l'app, le français se
+  choisit dans les réglages. Tutoiement en français. Commentaires en `///`, qui expliquent
+  le pourquoi. Calque-toi sur le style du fichier.
 - Pas de nouvelle dépendance sans en discuter dans une issue.
 - Les réglages passent par `PlumeSettings` (PlumeKit) et `SettingsModel` (app).
 - Les sons : `Sounds.swift` (synthèse) et `SoundPack` (packs enregistrés, `Resources/Sounds`).
-- Variables d'environnement d'essai (`PLUME_LIBRARY`, `PLUME_CHANNEL`, `PLUME_HEADLESS`,
-  `PLUME_FAKE_MIC`, `PLUME_FAKE_SYSTEM`, `PLUME_NO_PASTE`, `PLUME_VERBOSE`…) : voir
-  `docs/DEVELOPPEMENT.md`, section « Essais sans micro ». Elles permettent de tout tester sans
-  toucher à l'app installée ni à la vraie bibliothèque.
+- Variables d'environnement d'essai (`PLUME_LIBRARY`, `PLUME_DEFAULTS`, `PLUME_SUPPORT`,
+  `PLUME_CHANNEL`, `PLUME_HEADLESS`, `PLUME_FAKE_MIC`, `PLUME_FAKE_SYSTEM`, `PLUME_FAKE_CALL`,
+  `PLUME_NO_PASTE`, `PLUME_VERBOSE`…) : voir `docs/DEVELOPPEMENT.md`, section « Essais sans
+  micro ». Elles permettent de tout tester sans toucher à l'app installée, à ses réglages ni à
+  la vraie bibliothèque. Toujours mettre `PLUME_DEFAULTS` pour un essai : sans lui, le binaire
+  de développement écrit dans les réglages de l'app installée.
 - Chaque PR ajoute une ligne en haut de `CHANGELOG.md` :
   `- Domaine : effet, en quelques mots (#numéro)`, sous le `### <date>` du jour (à créer s'il
   manque). L'effet, pas la façon ; une PR sans effet notable (coquille, refacto) n'en ajoute

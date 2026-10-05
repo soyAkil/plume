@@ -16,9 +16,10 @@ enum Doctor {
         line("App en cours d'exécution", running.isEmpty ? "non" : "oui")
         line("Bibliothèque", settings.libraryURL.path)
         line("Transcriptions", "\(settings.store.list().count)")
-        line("Modèle choisi", settings.model.rawValue)
-        let cached = AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: settings.model == .parakeetUltra ? .ultra : .v3), version: settings.model == .parakeetUltra ? .ultra : .v3)
-        line("Modèle téléchargé", cached ? "oui" : "non (téléchargé au premier lancement)")
+        line("Modèle choisi", settings.model == .custom ? "dossier : \(settings.customModelURL?.path ?? "aucun")" : settings.model.rawValue)
+        let cached = settings.model.isAvailableOffline(customDirectory: settings.customModelURL)
+        line(settings.model == .custom ? "Dossier complet" : "Modèle téléchargé", cached ? "oui" : "non (téléchargé au premier lancement)")
+        line("Historique", settings.keepHistory ? (settings.keepAudio ? "texte et audio" : "texte seulement") : "rien n'est conservé")
         line("Raccourci dictée", HotkeyManager.describe(settings.dictationShortcut))
         line("Raccourci réunion", HotkeyManager.describe(settings.meetingShortcut))
 
@@ -49,5 +50,12 @@ enum Doctor {
             line("Écran \(screen.localizedName)", "\(Int(screen.frame.width)) × \(Int(screen.frame.height)) pt, \(notch)")
         }
         line("Empreinte vocale", VoiceprintStore.load().map { "apprise sur \($0.samples) dictée(s)" } ?? "pas encore apprise")
+        switch LocalAI.availability {
+        case .available: line("IA locale", "Apple Intelligence disponible")
+        case .unavailable(let reason): line("IA locale", "indisponible — \(reason)")
+        }
+        line("Règles par application", "\(AppRuleStore.load().count)")
+        let calls = MeetingDetector.processesUsingInput()
+        line("Apps utilisant le micro", calls.isEmpty ? "aucune" : calls.map(\.bundleID).joined(separator: ", "))
     }
 }

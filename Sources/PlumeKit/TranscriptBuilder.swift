@@ -5,6 +5,15 @@ public enum TranscriptBuilder {
     /// Pause au-delà de laquelle un même locuteur ouvre un nouveau paragraphe.
     public static let paragraphGap = 2.5
 
+    /// Le propriétaire de l'appareil : « Moi », ou « Me » en anglais.
+    public static var meName: String { tr("Moi") }
+
+    /// « Interlocuteur 1 », ou « Speaker 1 ».
+    public static func speakerName(_ index: Int) -> String { "\(tr("Interlocuteur")) \(index)" }
+
+    /// Reconnaît le propriétaire quelle que soit la langue dans laquelle il a été nommé.
+    public static func isMe(_ speaker: String) -> Bool { speaker == "Moi" || speaker == "Me" }
+
     /// Attribue chaque mot à un locuteur puis regroupe en tours de parole.
     /// - Parameters:
     ///   - words: mots horodatés d'un canal.
@@ -153,9 +162,9 @@ public enum TranscriptBuilder {
         var next = first
         for turn in turns where names[turn.speaker] == nil {
             if turn.speaker == me {
-                names[turn.speaker] = "Moi"
+                names[turn.speaker] = meName
             } else {
-                names[turn.speaker] = "Interlocuteur \(next)"
+                names[turn.speaker] = speakerName(next)
                 next += 1
             }
         }
@@ -282,12 +291,12 @@ public enum TranscriptBuilder {
         var next = 1
         return runs.enumerated().map { index, run in
             let name: String
-            if me.contains(run.speaker) || run.speaker == "Moi" {
-                name = "Moi"
+            if me.contains(run.speaker) || isMe(run.speaker) {
+                name = meName
             } else if let known = names[run.speaker] {
                 name = known
             } else {
-                name = "Interlocuteur \(next)"
+                name = speakerName(next)
                 names[run.speaker] = name
                 next += 1
             }

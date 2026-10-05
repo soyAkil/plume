@@ -39,7 +39,7 @@ It started as a free alternative to Superwhisper, designed around what people ac
   <img src="docs/assets/historique.png" width="800" alt="The history window: a list of dictations and meetings on the left, a three-person meeting transcript on the right">
 </p>
 
-The interface is in French for now; the model handles 25 European languages, and voice commands work in French and English. Translating the interface is on the [roadmap](docs/PLAN.md) and very welcome.
+The interface is in English, with French one click away in Settings; the model handles 25 European languages, and voice commands work in both. More translations are very welcome: the whole interface is one table, `Sources/PlumeKit/L10nTable.swift`.
 
 ## What it doesn't do
 
