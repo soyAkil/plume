@@ -38,6 +38,12 @@ enum UIRender {
                     name: "app-\(page.rawValue)-\(suffix)", in: output, appearance: appearance)
             }
         }
+        // Les enregistrements annulés, encore récupérables.
+        app.page = .history
+        app.library.filter = .cancelled
+        window(
+            AppShell(app: app, session: session), size: NSSize(width: 1040, height: 680),
+            name: "app-history-annules-sombre", in: output, appearance: .darkAqua)
     }
 
     private static func islandStates(_ output: URL) {
@@ -286,6 +292,23 @@ enum DemoLibrary {
         for (minutes, text, app) in recent {
             save(store, at: calendar.date(byAdding: .minute, value: minutes, to: today)!, text: text, app: app)
         }
+        // Deux enregistrements annulés par erreur, dont une réunion pas encore transcrite.
+        let cancelled = CancelledStore(library: root)
+        let tone = (0..<48_000).map { Float(sin(Double($0) * 2 * .pi * 220 / 16_000)) * 0.2 }
+        let dictationStart = calendar.date(byAdding: .minute, value: 17 * 60 + 2, to: today)!
+        try? cancelled.keep(
+            CancelledRecording(
+                id: store.makeID(for: dictationStart), createdAt: dictationStart, cancelledAt: dictationStart.addingTimeInterval(14),
+                mode: .dictation, duration: 14, app: "Mail",
+                text: "Merci pour l'invitation, je serai là jeudi. Je t'envoie la présentation ce soir.",
+                rawText: "merci pour l'invitation je serai là jeudi je t'envoie la présentation ce soir"),
+            mic: tone)
+        let meetingCancel = calendar.date(byAdding: .minute, value: 15 * 60, to: today)!
+        try? cancelled.keep(
+            CancelledRecording(
+                id: store.makeID(for: meetingCancel), createdAt: meetingCancel, cancelledAt: meetingCancel.addingTimeInterval(1_260),
+                mode: .meeting, duration: 1_260, app: "Zoom"),
+            mic: tone, system: (samples: tone, offset: 0))
     }
 
     private static func save(_ store: TranscriptStore, at date: Date, text: String, app: String? = nil) {

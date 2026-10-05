@@ -54,6 +54,7 @@ public final class PlumeSettings: @unchecked Sendable {
             Key.keepAudio: true,
             Key.keepHistory: true,
             Key.audioRetentionDays: 0,
+            Key.cancelledRetentionHours: 24 * 7,
             Key.sounds: true,
             Key.systemAudioInMeeting: true,
             Key.meetingDetection: true,
@@ -81,6 +82,7 @@ public final class PlumeSettings: @unchecked Sendable {
         static let keepAudio = "keepAudio"
         static let keepHistory = "keepHistory"
         static let audioRetentionDays = "audioRetentionDays"
+        static let cancelledRetentionHours = "cancelledRetentionHours"
         static let customModelPath = "customModelPath"
         static let sounds = "sounds"
         static let systemAudioInMeeting = "systemAudioInMeeting"
@@ -95,6 +97,8 @@ public final class PlumeSettings: @unchecked Sendable {
         static let openShortcut = "openShortcut"
         static let pasteLastShortcut = "pasteLastShortcut"
         static let transformShortcut = "transformShortcut"
+        static let cancelShortcut = "cancelShortcut"
+        static let restoreShortcut = "restoreShortcut"
         static let appearance = "appearance"
         static let language = "language"
         static let microphoneUID = "microphoneUID"
@@ -208,6 +212,16 @@ public final class PlumeSettings: @unchecked Sendable {
         get { defaults.integer(forKey: Key.audioRetentionDays) }
         set { defaults.set(newValue, forKey: Key.audioRetentionDays) }
     }
+
+    /// Nombre d'heures pendant lesquelles un enregistrement annulé reste récupérable
+    /// (0 : il est jeté tout de suite).
+    public var cancelledRetentionHours: Int {
+        get { defaults.integer(forKey: Key.cancelledRetentionHours) }
+        set { defaults.set(newValue, forKey: Key.cancelledRetentionHours) }
+    }
+
+    /// Les enregistrements annulés encore récupérables.
+    public var cancelled: CancelledStore { CancelledStore(library: libraryURL) }
 
     /// Proposer d'enregistrer quand une app de visio se met à utiliser le micro.
     public var meetingDetection: Bool {
@@ -330,6 +344,22 @@ public final class PlumeSettings: @unchecked Sendable {
     public var transformShortcut: Shortcut {
         get { shortcut(forKey: Key.transformShortcut) ?? .none }
         set { setShortcut(newValue, forKey: Key.transformShortcut) }
+    }
+
+    /// Échap par défaut. Modifiable (⇧⎋, ⌃⎋…) pour qui presse Échap par réflexe dans d'autres apps.
+    public static let defaultCancelShortcut = Shortcut(keyCode: 53, modifiers: 0)
+
+    /// Raccourci qui annule l'enregistrement en cours. Il n'est intercepté que pendant un
+    /// enregistrement : le reste du temps, la touche garde son rôle habituel.
+    public var cancelShortcut: Shortcut {
+        get { shortcut(forKey: Key.cancelShortcut) ?? Self.defaultCancelShortcut }
+        set { setShortcut(newValue, forKey: Key.cancelShortcut) }
+    }
+
+    /// Raccourci qui récupère le dernier enregistrement annulé (aucun par défaut).
+    public var restoreShortcut: Shortcut {
+        get { shortcut(forKey: Key.restoreShortcut) ?? .none }
+        set { setShortcut(newValue, forKey: Key.restoreShortcut) }
     }
 
     private func shortcut(forKey key: String) -> Shortcut? {

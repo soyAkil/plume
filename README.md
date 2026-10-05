@@ -20,7 +20,7 @@ It started as a free alternative to Superwhisper, designed around what people ac
 
 ## What it does
 
-- **One shortcut.** `⌃⇧` starts a dictation; `⌃⇧` again pastes it into the active field. Hold the keys instead and Plume listens for as long as you hold them, then pastes when you let go. `esc` cancels. Hover the notch for pause, meeting, cancel and done. Pause really closes the microphone — the orange light goes off — and the gap is filled in when you resume.
+- **One shortcut.** `⌃⇧` starts a dictation; `⌃⇧` again pastes it into the active field. Hold the keys instead and Plume listens for as long as you hold them, then pastes when you let go. `esc` cancels (or any key or combination you like, such as `⇧esc`), and a cancelled recording is kept aside for a week so a slip of the finger costs nothing: restore it from the history or a shortcut. Hover the notch for pause, meeting, cancel and done. Pause really closes the microphone — the orange light goes off — and the gap is filled in when you resume.
 - **Meetings, both sides.** `⌃⇧⌘`, or the Meeting button on the island in the middle of a dictation. Plume records your microphone and the computer's audio (Meet, Zoom, Teams, FaceTime, anything that makes sound), separates the voices once the recording ends, labels yours "Me" from a voiceprint it learns on your own dictations, and files the dialogue in the history instead of pasting it. No headset? The speakers leak back into the mic; Plume detects that echo and removes it before transcribing, so the other side isn't written down twice. Click a name to rename it everywhere, click a timestamp to listen from there.
 - **It notices the call.** When Zoom, Teams, FaceTime, Webex, Slack, Discord or a browser takes the microphone, the island offers to record. It only reads which processes hold the mic; nothing is heard until you click Record. The offer goes away by itself after twenty seconds.
 - **Live.** The text appears in the notch as you talk, from the same model that produces the final result, so what you see is what you get.
@@ -71,7 +71,7 @@ Audio is written to disk as it is recorded, for dictations and meetings alike. D
 | | |
 |---|---|
 | `⌃⇧` start · `⌃⇧` again paste · hold `⌃⇧` talk while held · `⌃⇧⌘` meeting · `esc` cancel | Hover the notch: pause, meeting, cancel, done |
-| In the window: `1`–`5` home, history, vocabulary, applications, settings · `T` light or dark · `S` sounds | Two more, unassigned by default: paste the last dictation again, and transform the selection |
+| In the window: `1`–`5` home, history, vocabulary, applications, settings · `T` light or dark · `S` sounds | Three more, unassigned by default: paste the last dictation again, restore the last cancelled recording, and transform the selection |
 
 Shortcuts are changed in Settings. A shortcut can be a chord of modifiers alone (`⌃⇧`) or a key with modifiers (`⌥Space`). A chord only fires when it is "clean": `⌃⇧Tab` or `⌃⇧` + click do nothing.
 

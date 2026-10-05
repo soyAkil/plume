@@ -360,6 +360,73 @@ struct RecoveryTests {
     }
 }
 
+@Suite("Enregistrements annulés")
+struct CancelledTests {
+    /// Une seconde de la a 440, assez fort pour ne pas passer pour du silence.
+    let tone = (0..<16_000).map { Float(sin(Double($0) * 2 * .pi * 440 / 16_000)) * 0.3 }
+
+    @Test func gardeListeEtSupprime() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = CancelledStore(library: root)
+        let now = Date()
+        try store.keep(
+            CancelledRecording(id: "2026-10-05_10-00-00", createdAt: now, cancelledAt: now.addingTimeInterval(-10), mode: .dictation, duration: 1),
+            mic: tone)
+        try store.keep(
+            CancelledRecording(id: "2026-10-05_11-00-00", createdAt: now, cancelledAt: now, mode: .meeting, duration: 1, app: "Zoom"),
+            mic: tone, system: (samples: tone, offset: 0.5))
+
+        let list = store.list()
+        #expect(list.map(\.id) == ["2026-10-05_11-00-00", "2026-10-05_10-00-00"])
+        #expect(list[0].audioFiles == ["2026-10-05_11-00-00_mic.m4a", "2026-10-05_11-00-00_sys.m4a"])
+        #expect(store.audioURLs(for: list[0]).count == 2)
+        #expect(list[0].app == "Zoom")
+
+        // Le texte trouvé après coup s'ajoute à la fiche.
+        var dictation = list[1]
+        dictation.text = "Bonjour à tous."
+        store.update(dictation)
+        #expect(store.load(id: dictation.id)?.preview == "Bonjour à tous.")
+
+        store.delete(id: "2026-10-05_11-00-00")
+        #expect(store.list().map(\.id) == ["2026-10-05_10-00-00"])
+        #expect(!FileManager.default.fileExists(atPath: store.root.appendingPathComponent("2026-10-05_11-00-00_mic.m4a").path))
+        // Une fiche supprimée n'est pas recréée par une mise à jour tardive.
+        store.update(CancelledRecording(id: "2026-10-05_11-00-00", createdAt: now, mode: .meeting, duration: 1))
+        #expect(store.list().count == 1)
+    }
+
+    @Test func purgeCeQuiADépasséLeDélai() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = CancelledStore(library: root)
+        let now = Date()
+        try store.keep(CancelledRecording(id: "vieux", createdAt: now, cancelledAt: now.addingTimeInterval(-3 * 3600), mode: .dictation, duration: 1), mic: tone)
+        try store.keep(CancelledRecording(id: "recent", createdAt: now, cancelledAt: now, mode: .dictation, duration: 1), mic: tone)
+        #expect(store.purge(cancelledBefore: now.addingTimeInterval(-3600)) == 1)
+        #expect(store.list().map(\.id) == ["recent"])
+    }
+
+    @Test func horsDeLIndexDeLaBibliothèque() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try CancelledStore(library: root).keep(
+            CancelledRecording(id: "2026-10-05_10-00-00", createdAt: Date(), mode: .dictation, duration: 1), mic: tone)
+        let library = TranscriptStore(root: root)
+        #expect(library.list().isEmpty)
+        #expect(Recovery.pending(in: library).isEmpty)
+    }
+
+    @Test func raccourciDAnnulationParDéfautEtSauvegarde() {
+        // Échap seul par défaut, comme avant ; modifiable dans les réglages.
+        #expect(PlumeSettings.defaultCancelShortcut == Shortcut(keyCode: 53, modifiers: 0))
+        #expect(SettingsBackup.shortcutKeys.contains(PlumeSettings.Key.cancelShortcut))
+        #expect(SettingsBackup.shortcutKeys.contains(PlumeSettings.Key.restoreShortcut))
+        #expect(SettingsBackup.numberKeys.contains(PlumeSettings.Key.cancelledRetentionHours))
+    }
+}
+
 @Suite("Statistiques")
 struct StatsTests {
     func date(_ string: String) -> Date {

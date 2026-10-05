@@ -103,6 +103,9 @@ final class SessionController: ObservableObject {
     private var askedForAccessibility = false
     /// Annulation d'un faux déclenchement (⌃⇧ suivi d'une touche) : pas de son.
     private var silentCancel = false
+    /// Mise de côté du dernier enregistrement annulé (audio, puis texte) : une récupération
+    /// demandée tout de suite attend qu'elle soit finie.
+    private var keepingCancelled: Task<Void, Never>?
     /// Sessions en cours d'enregistrement ou de traitement : la reprise ne doit pas y toucher.
     private var activeSessions = Set<String>()
     /// Imports de fichiers en cours (glisser-déposer, menu).
@@ -536,22 +539,147 @@ final class SessionController: ObservableObject {
         paused = false
     }
 
-    private func removeTemporaryAudio() {
-        for recorder in [micChannel, systemChannel] {
+    private func removeTemporaryAudio(_ recorders: ChannelRecorder?...) {
+        for recorder in recorders {
             if let url = recorder?.writer?.url { try? FileManager.default.removeItem(at: url) }
         }
     }
 
     func cancel() {
         guard phase == .recording else { return }
+        let end = paused ? (pausedAt ?? Date()) : Date()
+        let duration = startedAt.map { end.timeIntervalSince($0) - pausedTotal } ?? 0
+        // Un faux déclenchement ou un appui de moins d'une seconde n'a rien à garder.
+        let keep = !silentCancel && settings.cancelledRetentionHours > 0 && duration >= 1
+        let recording = sessionID.map {
+            CancelledRecording(
+                id: $0, createdAt: startedAt ?? Date(), mode: mode, duration: duration, app: frontApp)
+        }
+        let channels = (mic: micChannel, system: systemChannel)
         teardownCapture()
-        removeTemporaryAudio()
-        if let sessionID { activeSessions.remove(sessionID) }
         micChannel = nil
         systemChannel = nil
         if !silentCancel { Sounds.play(.cancel) }
         silentCancel = false
+        guard keep, let recording, let micRecorder = channels.mic else {
+            removeTemporaryAudio(channels.mic, channels.system)
+            if let sessionID { activeSessions.remove(sessionID) }
+            setPhase(.idle)
+            return
+        }
+        keepCancelled(recording, mic: micRecorder, system: channels.system)
         setPhase(.idle)
+    }
+
+    /// Range un enregistrement annulé parmi les récupérables. Les fichiers de secours restent
+    /// en place tant qu'il n'est pas écrit : si l'app s'arrête entre-temps, rien n'est perdu.
+    private func keepCancelled(_ recording: CancelledRecording, mic: ChannelRecorder, system: ChannelRecorder?) {
+        let settings = self.settings
+        let engine = self.engine
+        let previous = keepingCancelled
+        keepingCancelled = Task { [weak self] in
+            await previous?.value
+            let store = settings.cancelled
+            // Une heure de réunion pèse quelques centaines de Mo : copiée et encodée hors du fil principal.
+            let (kept, samples) = await Task.detached(priority: .utility) { () -> (Bool, [Float]) in
+                let samples = mic.buffer.all()
+                let systemAudio = system.map { (samples: $0.buffer.all(), offset: $0.offset) }
+                return ((try? store.keep(recording, mic: samples, system: systemAudio)) != nil, samples)
+            }.value
+            guard let self else { return }
+            if kept { self.removeTemporaryAudio(mic, system) }
+            self.activeSessions.remove(recording.id)
+            guard kept else {
+                Log.write("annulation : audio non conservé (\(recording.id))")
+                return
+            }
+            Log.write("annulation : enregistrement gardé de côté (\(recording.id))")
+            // Une dictée est transcrite tout de suite : on voit ce qu'elle contenait, et la
+            // récupérer est instantané. Une réunion attend qu'on la demande.
+            if recording.mode == .dictation {
+                try? await engine.prepare(model: settings.model)
+                if let result = try? await Pipeline.dictation(
+                    samples: samples, engine: engine, options: DictationOptions(settings: settings))
+                {
+                    var updated = recording
+                    updated.audioFiles = store.load(id: recording.id)?.audioFiles ?? []
+                    updated.text = result.text
+                    updated.rawText = result.raw
+                    store.update(updated)
+                }
+            }
+            self.purgeCancelled()
+            self.onLibraryChanged?()
+        }
+    }
+
+    /// Jette les enregistrements annulés plus vieux que le délai choisi.
+    func purgeCancelled() {
+        let hours = settings.cancelledRetentionHours
+        let store = settings.cancelled
+        let cutoff = hours > 0 ? Date().addingTimeInterval(-Double(hours) * 3600) : .distantFuture
+        Task.detached(priority: .utility) {
+            let count = store.purge(cancelledBefore: cutoff)
+            if count > 0 { Log.write("annulés : \(count) enregistrement(s) expiré(s) supprimé(s)") }
+        }
+    }
+
+    /// Récupère un enregistrement annulé (le dernier, par défaut) : transcrit s'il ne l'est pas
+    /// déjà, rangé dans l'historique, et pour une dictée collée là où est le curseur.
+    /// - Parameters:
+    ///   - paste: faux depuis la fenêtre de Plume, où le texte est seulement copié.
+    ///   - completion: la transcription obtenue, ou `nil` en cas d'échec.
+    func restoreCancelled(id: String? = nil, paste: Bool = true, completion: ((Transcript?) -> Void)? = nil) {
+        guard phase != .recording else { return }
+        hideTask?.cancel()
+        setPhase(.processing(tr("Récupération")))
+        imports += 1
+        unloadTask?.cancel()
+        let settings = self.settings
+        let engine = self.engine
+        Task {
+            defer {
+                imports -= 1
+                if phase == .idle { scheduleUnload() }
+            }
+            await keepingCancelled?.value
+            let store = settings.cancelled
+            guard let recording = id.flatMap(store.load) ?? store.list().first else {
+                finish(.failed(tr("Rien à récupérer")), hideAfter: 1.8)
+                completion?(nil)
+                return
+            }
+            // Le mode sert à l'encoche (bouton « Ouvrir » d'une réunion) ; une dictée lancée
+            // entre-temps garde le sien.
+            if phase != .recording { mode = recording.mode }
+            // Sans historique, une dictée récupérée est rendue sans être rangée.
+            let save = recording.mode != .dictation || settings.keepHistory
+            do {
+                let transcript = try await store.restore(recording, save: save, settings: settings, engine: engine)
+                Log.write("annulation : enregistrement récupéré (\(transcript.id))")
+                lastTranscript = transcript
+                onLibraryChanged?()
+                completion?(transcript)
+                if transcript.mode == .meeting {
+                    Sounds.play(.ready)
+                    finish(.done(tr("Réunion récupérée")), hideAfter: 6)
+                } else if paste, settings.pasteAfterDictation, !TestHooks.noPaste,
+                    Paster.paste(transcript.text, restoreClipboard: settings.restoreClipboard)
+                {
+                    finish(.done(tr("Récupéré")), hideAfter: 1.5)
+                } else {
+                    if !TestHooks.noPaste { Paster.copy(transcript.text) }
+                    finish(.done(tr("Récupéré · ⌘V pour coller")), hideAfter: 2.5)
+                }
+            } catch CancelledStore.Failure.nothingHeard {
+                finish(.failed(tr("Rien entendu")), hideAfter: 1.8)
+                completion?(nil)
+            } catch {
+                Log.write("récupération impossible (\(recording.id)) : \(error.localizedDescription)")
+                finish(.failed(tr("Récupération impossible")), hideAfter: 3)
+                completion?(nil)
+            }
+        }
     }
 
     func stop() {
@@ -562,7 +690,7 @@ final class SessionController: ObservableObject {
         // Appui accidentel : rien à transcrire.
         guard duration >= 0.4 else {
             teardownCapture()
-            removeTemporaryAudio()
+            removeTemporaryAudio(self.micChannel, systemChannel)
             activeSessions.remove(sessionID)
             self.micChannel = nil
             systemChannel = nil

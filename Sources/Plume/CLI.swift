@@ -7,7 +7,7 @@ enum CLI {
     static let commands: Set<String> = [
         "transcribe", "last", "list", "show", "search", "path", "mcp", "live", "render", "toggle", "stop", "cancel",
         "diarize", "doctor", "selftest", "simulate-chord", "open", "sounds", "aec", "words", "reprocess", "mictest",
-        "snapshot", "tiroir-ouvert", "tiroir-ferme",
+        "snapshot", "tiroir-ouvert", "tiroir-ferme", "cancelled", "restore",
         "format", "export", "summarize", "polish", "transform", "listen", "pause", "paste", "settings", "calls",
         "help", "--help", "-h",
     ]
@@ -48,6 +48,8 @@ enum CLI {
           plume stop | plume cancel | plume pause              terminer / annuler / mettre en pause
           plume listen [--timeout 180]                         dicter dans l'app, et recevoir le texte ici
           plume paste                                          recoller la dernière dictée
+          plume cancelled                                      enregistrements annulés encore récupérables
+          plume restore                                        récupérer le dernier enregistrement annulé
           plume open                                           ouvrir la fenêtre de Plume
           plume path                                           dossier de la bibliothèque
           plume settings export|import <fichier.json>          sauvegarder / restaurer tous les réglages
@@ -74,6 +76,18 @@ enum CLI {
 
         case "path":
             emit(settings.libraryURL.path)
+            return 0
+
+        case "cancelled":
+            let recordings = settings.cancelled.list()
+            if recordings.isEmpty { printError("Aucun enregistrement annulé.") }
+            for recording in recordings {
+                emit("\(recording.id)  \(recording.mode.slug)  \(Format.clock(recording.duration))  \(recording.preview ?? "")")
+            }
+            return 0
+
+        case "restore":
+            Remote.send("restore")
             return 0
 
         case "last":

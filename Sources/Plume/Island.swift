@@ -384,6 +384,19 @@ struct IslandView: View {
         return .spring(duration: 0.36, bounce: 0.16)
     }
 
+    /// « Annuler (⇧⎋) », ou « Annuler » quand aucun raccourci n'est attribué.
+    private var cancelHelp: String {
+        let shortcut = settings.cancelShortcut
+        return shortcut.isEmpty ? tr("Annuler") : tr("Annuler") + " (" + HotkeyManager.describe(shortcut) + ")"
+    }
+
+    private func label(for action: Drawer.Action) -> String {
+        switch action {
+        case .openTranscript: return tr("Ouvrir")
+        case .startMeeting: return tr("Enregistrer")
+        }
+    }
+
     /// Contenu du tiroir, à hauteurs fixes : rien ne bouge à l'intérieur pendant qu'il glisse.
     private func drawerView(_ drawer: Drawer) -> some View {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
@@ -401,7 +414,7 @@ struct IslandView: View {
                             case .startMeeting: session.acceptSuggestion()
                             }
                         } label: {
-                            Text(action == .openTranscript ? tr("Ouvrir") : tr("Enregistrer"))
+                            Text(label(for: action))
                                 .font(UI.sans(12, .medium))
                                 .foregroundColor(.black.opacity(0.88))
                                 .padding(.horizontal, 10)
@@ -545,7 +558,7 @@ struct IslandView: View {
             IslandButton(help: paused ? tr("Reprendre") : tr("Mettre en pause"), action: { session.togglePause() }) {
                 Icon(paused ? .play : .pause, size: 11, filled: true)
             }
-            IslandButton(help: tr("Annuler (Échap)"), action: { session.cancel() }) {
+            IslandButton(help: cancelHelp, action: { session.cancel() }) {
                 Icon(.x, size: 12)
             }
             IslandButton(help: tr("Terminer"), prominent: true, action: { session.stop() }) {

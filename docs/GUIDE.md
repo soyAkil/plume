@@ -10,14 +10,20 @@ Tout ce que Plume sait faire, en détail. Pour l'essentiel, voir le [README](../
 | `⌃⇧` (maintenu) | Parle tant que les touches sont tenues ; relâche pour coller. |
 | Survol de l'encoche | La touche **Réunion** (elle s'enclenche et reste allumée), annuler, terminer. |
 | `⌃⇧⌘` | Démarre directement une réunion (ou y passe en cours de dictée). |
-| `Échap` | Annule la dictée en cours. |
+| `Échap` | Annule la dictée en cours (raccourci modifiable). L'enregistrement annulé reste récupérable, voir [Enregistrements annulés](#enregistrements-annulés). |
 | Survol de l'encoche › `⏸` | Met l'enregistrement en pause (le micro se ferme) ; `▶` reprend. |
 | Clic sur l'icône de la barre de menus | Ouvre la fenêtre de Plume (clic droit : menu court, avec les dernières dictées à recopier). |
 | `1` `2` `3` `4` `5`, `T`, `S` dans la fenêtre | Accueil, historique, vocabulaire, applications, réglages ; thème clair / sombre ; sons. |
 
-Deux raccourcis de plus, sans touche par défaut (à choisir dans **Réglages › Raccourcis**) :
-**Recoller la dernière dictée** (quand le collage a raté, ou pour la réutiliser ailleurs) et
-**Transformer la sélection** (voir [IA locale](#ia-locale)).
+Trois raccourcis de plus, sans touche par défaut (à choisir dans **Réglages › Raccourcis**) :
+**Recoller la dernière dictée** (quand le collage a raté, ou pour la réutiliser ailleurs),
+**Récupérer le dernier enregistrement annulé** et **Transformer la sélection** (voir
+[IA locale](#ia-locale)).
+
+Le raccourci **Annuler la dictée** accepte une touche seule ou avec modificateurs, Échap
+compris (`⎋`, `⇧⎋`, `⌃⎋`…) : une combinaison évite de couper une dictée en pressant Échap
+par réflexe dans une autre app.
+Il n'est intercepté que pendant une dictée ; le reste du temps, la touche garde son rôle.
 
 Les raccourcis se changent dans **Réglages**. Un raccourci peut être un accord de
 modificateurs seuls (`⌃⇧`) ou une touche avec modificateurs (`⌥Espace`). Un accord ne se
@@ -132,6 +138,18 @@ défaut), *le texte seulement*, ou *rien* — la dictée est collée puis oubli�
 audio, sans fichier de secours (les réunions, qui n'ont pas d'autre débouché, restent dans
 l'historique). **Garder l'audio** limite la conservation des enregistrements (90, 30 ou 7
 jours) : l'audio plus ancien est supprimé au lancement, le texte reste.
+### Enregistrements annulés
+
+Une dictée ou une réunion annulée (raccourci, bouton de l'encoche, menu) n'est pas jetée tout de
+suite : elle est mise de côté dans `~/Plume/.annules/`, hors de l'historique et de l'index.
+Elle se retrouve par le bouton `↶` en haut de l'historique (on peut l'écouter, la copier, la récupérer ou la supprimer), par le
+raccourci **Récupérer le dernier enregistrement annulé**, le menu de la barre, `plume restore` ou
+`plume://recuperer`. Une dictée annulée est transcrite en arrière-plan (la récupérer la colle
+aussitôt, depuis l'encoche ou le raccourci) ; une réunion ne l'est qu'au moment où on la récupère.
+**Réglages › Bibliothèque › Garder les enregistrements annulés** : *ne pas garder*, 1 heure,
+24 heures, 7 jours (par défaut) ou 30 jours ; passé ce délai, ils sont supprimés. Un appui de
+moins d'une seconde n'est pas gardé.
+
 **Tous les réglages › Exporter…** écrit raccourcis, options, vocabulaire et règles par
 application dans un fichier JSON, à importer sur un autre Mac.
 
@@ -213,9 +231,10 @@ L'app est signée avec un certificat local stable : les autorisations survivent 
    il reçoit le texte. De quoi dire à Claude Code « demande-moi à l'oral » plutôt que de taper.
 
 `plume toggle dictee|reunion`, `plume stop`, `plume cancel`, `plume pause`, `plume paste`
-(recoller la dernière dictée) et `plume open` pilotent l'app ouverte depuis un script, Raycast
+(recoller la dernière dictée), `plume restore` (récupérer le dernier enregistrement annulé ;
+`plume cancelled` les liste) et `plume open` pilotent l'app ouverte depuis un script, Raycast
 ou un Stream Deck. Les liens `plume://dictee`, `plume://reunion`, `plume://stop`,
-`plume://pause`, `plume://recoller`, `plume://transformer` et `plume://ouvrir` font de même
+`plume://pause`, `plume://recoller`, `plume://recuperer`, `plume://transformer` et `plume://ouvrir` font de même
 depuis Raccourcis ou n'importe quelle app. `plume doctor` affiche l'état des autorisations, du
 modèle, de l'IA locale et des écrans ; `plume format "texte"` montre ce que la mise en forme
 fait d'un texte brut ; `plume polish` et `plume transform` essaient l'IA locale.

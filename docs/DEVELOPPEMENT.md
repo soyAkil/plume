@@ -41,6 +41,7 @@ Sources/PlumeKit/      cœur indépendant de l'interface (réutilisable pour une
   Library.swift          bibliothèque sur disque (md + json + index), entretien de l'audio
   Stats.swift            chiffres de la page d'accueil
   Recovery.swift         reprise des enregistrements interrompus
+  Cancelled.swift        enregistrements annulés gardés de côté (~/Plume/.annules), purge, récupération
   Importer.swift         transcription d'un fichier existant
 Sources/Plume/         l'app macOS
   SessionController.swift chef d'orchestre d'un enregistrement (dictée ↔ réunion, pause, consigne IA)

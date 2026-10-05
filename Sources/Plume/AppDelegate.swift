@@ -38,17 +38,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         session.onPhaseChanged = { [weak self] phase in
             guard let self else { return }
             if TestHooks.showsIsland { self.island.phaseChanged(phase) }
-            self.updateEscape()
+            self.updateCancelShortcut()
             self.hotkeys.holdEnabled = !self.session.isRecording
             self.updateStatusIcon()
         }
-        session.onModeChanged = { [weak self] _ in self?.updateEscape() }
+        session.onModeChanged = { [weak self] _ in self?.updateCancelShortcut() }
         session.onLibraryChanged = { [weak self] in self?.app.refresh() }
 
         hotkeys.onPress = { [weak self] action in
             TestHooks.log("raccourci : appui \(action)")
             if action == .open {
                 self?.showWindow()
+            } else if action == .restore {
+                self?.session.restoreCancelled()
             } else {
                 self?.session.handlePress(action)
             }
@@ -62,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             TestHooks.log("raccourci : annulation \($0)")
             self?.session.handleCancel($0)
         }
-        hotkeys.onEscape = { [weak self] in self?.session.cancel() }
+        hotkeys.onCancelShortcut = { [weak self] in self?.session.cancel() }
         if !TestHooks.headless { hotkeys.reload() }
 
         app.settings.onShortcutsChanged = { [weak self] in
@@ -70,6 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         app.settings.onRecordingShortcut = { [weak self] recording in self?.hotkeys.isPaused = recording }
         app.settings.onModelChanged = { [weak self] in self?.session.loadModel() }
+        app.settings.onCancelledRetentionChanged = { [weak self] in
+            self?.session.purgeCancelled()
+            self?.app.library.reload()
+        }
         app.settings.onAppearanceChanged = { [weak self] in self?.applyAppearance() }
         app.settings.onLanguageChanged = { [weak self] in
             self?.buildMainMenu()
@@ -92,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Updates.shared.start()
         session.loadModel()
         purgeOldAudio()
+        session.purgeCancelled()
 
         // Premier lancement, ou autorisation manquante : la fenêtre s'ouvre sur l'accueil.
         if TestHooks.fakeMic == nil, !settings.onboarded || app.settings.permissionsMissing {
@@ -113,10 +120,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// Échap n'est intercepté que pendant une dictée (pas pendant une réunion d'une heure).
-    private func updateEscape() {
+    /// Le raccourci d'annulation n'est intercepté que pendant une dictée (pas pendant une
+    /// réunion d'une heure, qu'on annule depuis l'encoche).
+    private func updateCancelShortcut() {
         guard !TestHooks.headless else { return }
-        hotkeys.setEscapeEnabled(session.phase == .recording && session.mode == .dictation)
+        hotkeys.setCancelEnabled(session.phase == .recording && session.mode == .dictation)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -125,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// Liens `plume://dictee`, `plume://reunion`, `plume://stop`, `plume://cancel`, `plume://pause`,
-    /// `plume://recoller`, `plume://ouvrir` : pour Raccourcis, Raycast, un Stream Deck.
+    /// `plume://recoller`, `plume://recuperer`, `plume://ouvrir` : pour Raccourcis, Raycast, un Stream Deck.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "plume" {
             let command = (url.host ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).lowercased()
@@ -138,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case "cancel", "annuler": session.cancel()
             case "pause": session.togglePause()
             case "recoller", "paste": session.pasteLast()
+            case "recuperer", "récupérer", "restore": session.restoreCancelled()
             case "ouvrir", "open", "": showWindow()
             default: break
             }
@@ -185,11 +194,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 hint: HotkeyManager.describe(settings.dictationShortcut)))
         if recording {
             menu.addItem(item(session.paused ? tr("Reprendre") : tr("Mettre en pause"), #selector(togglePause)))
-            menu.addItem(item(tr("Annuler"), #selector(cancelRecording)))
+            menu.addItem(item(tr("Annuler"), #selector(cancelRecording), hint: HotkeyManager.describe(settings.cancelShortcut)))
         } else {
             menu.addItem(item(tr("Enregistrer une réunion"), #selector(toggleMeeting)))
             menu.addItem(
                 item(tr("Recoller la dernière dictée"), #selector(pasteLast), hint: HotkeyManager.describe(settings.pasteLastShortcut)))
+            if !settings.cancelled.list().isEmpty {
+                menu.addItem(
+                    item(
+                        tr("Récupérer le dernier enregistrement annulé"), #selector(restoreCancelled),
+                        hint: HotkeyManager.describe(settings.restoreShortcut)))
+            }
             // Les dernières dictées, à recopier d'un clic.
             let recent = settings.store.list(limit: 6, mode: .dictation)
             if !recent.isEmpty {
@@ -237,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func togglePause() { session.togglePause() }
     @objc private func cancelRecording() { session.cancel() }
     @objc private func pasteLast() { session.pasteLast() }
+    @objc private func restoreCancelled() { session.restoreCancelled() }
     @objc private func copyRecent(_ sender: NSMenuItem) {
         if let text = sender.representedObject as? String { Paster.copy(text) }
     }

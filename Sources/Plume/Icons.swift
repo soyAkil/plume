@@ -11,7 +11,7 @@ enum Glyph: String {
     case plume
     /// « zZ » : rien ne rentre dans le micro.
     case sleep
-    case sun, trash, triangleAlert, users, volume, volumeHigh, wandSparkles, x
+    case sun, trash, triangleAlert, undo, users, volume, volumeHigh, wandSparkles, x
 
     /// Côté de la grille dans laquelle l'icône est dessinée.
     var box: CGFloat {
@@ -38,6 +38,7 @@ enum Glyph: String {
         .arrowRight: ["M5 12h14", "m12 5 7 7-7 7"],
         .clipboardPaste: ["M11 14h10", "M16 4h2a2 2 0 0 1 2 2v1.344", "m17 18 4-4-4-4", "M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113", "M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-6a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1Z"],
         .cornerDownLeft: ["M20 4v7a4 4 0 0 1-4 4H4", "m9 10-5 5 5 5"],
+        .undo: ["M9 14L4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1 -5.5 5.5H11"],
         .fileDown: ["M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z", "M14 2v5a1 1 0 0 0 1 1h5", "M12 18v-6", "m9 15 3 3 3-3"],
         .fileText: ["M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z", "M14 2v5a1 1 0 0 0 1 1h5", "M10 9H8", "M16 13H8", "M16 17H8"],
         .keyboard: ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2Z", "M10 8h.01", "M12 12h.01", "M14 8h.01", "M16 12h.01", "M18 8h.01", "M6 8h.01", "M7 16h10", "M8 12h.01"],

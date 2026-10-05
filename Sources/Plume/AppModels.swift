@@ -69,6 +69,22 @@ final class AppModel: ObservableObject {
         library.select(transcript)
     }
 
+    /// Récupère un enregistrement annulé depuis l'historique, puis l'ouvre.
+    func restoreCancelled(_ recording: CancelledRecording) {
+        guard library.restoring == nil else { return }
+        library.restoring = recording.id
+        library.player.stop()
+        session.restoreCancelled(id: recording.id, paste: false) { [weak self] transcript in
+            guard let self else { return }
+            self.library.restoring = nil
+            if let transcript, PlumeSettings.shared.store.load(id: transcript.id) != nil {
+                self.open(transcript)
+            } else {
+                self.library.reload()
+            }
+        }
+    }
+
     func importFiles(_ urls: [URL]) {
         let audio = urls.filter(Importer.isAudio)
         guard !audio.isEmpty else { return }
@@ -98,6 +114,12 @@ final class AppModel: ObservableObject {
 
 enum HistoryFilter: String, CaseIterable, Identifiable {
     case all, dictation, meeting, imported
+    /// Les enregistrements annulés encore récupérables : ouverts par leur propre bouton, pas
+    /// par la barre de filtres.
+    case cancelled
+
+    /// Les onglets de la barre de filtres.
+    static let tabs: [HistoryFilter] = [.all, .dictation, .meeting, .imported]
 
     var id: String { rawValue }
 
@@ -107,12 +129,13 @@ enum HistoryFilter: String, CaseIterable, Identifiable {
         case .dictation: return tr("Dictées")
         case .meeting: return tr("Réunions")
         case .imported: return tr("Imports")
+        case .cancelled: return tr("Annulés")
         }
     }
 
     var mode: RecordingMode? {
         switch self {
-        case .all: return nil
+        case .all, .cancelled: return nil
         case .dictation: return .dictation
         case .meeting: return .meeting
         case .imported: return .imported
@@ -132,6 +155,11 @@ final class LibraryModel: ObservableObject {
     }
     /// Nombre de fichiers en cours de transcription.
     @Published var importing = 0
+    /// Enregistrements annulés encore récupérables (filtre `.cancelled`).
+    @Published var cancelled: [CancelledRecording] = []
+    @Published var cancelledSelection: String?
+    /// Enregistrement annulé en cours de récupération.
+    @Published var restoring: String?
     /// Transcription dont la séparation des voix est en train d'être refaite.
     @Published var reprocessing: String?
 
@@ -142,8 +170,23 @@ final class LibraryModel: ObservableObject {
         transcripts.first { $0.id == selection }
     }
 
+    var selectedCancelled: CancelledRecording? {
+        cancelled.first { $0.id == cancelledSelection }
+    }
+
     func reload() {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if filter == .cancelled {
+            var items = PlumeSettings.shared.cancelled.list()
+            if !trimmed.isEmpty {
+                items = items.filter { ($0.text ?? "").localizedCaseInsensitiveContains(trimmed) || ($0.app ?? "").localizedCaseInsensitiveContains(trimmed) }
+            }
+            cancelled = items
+            if cancelledSelection == nil || !items.contains(where: { $0.id == cancelledSelection }) {
+                cancelledSelection = items.first?.id
+            }
+            return
+        }
         var items = trimmed.isEmpty ? store.list(limit: 800) : store.search(trimmed, limit: 300)
         if let mode = filter.mode { items = items.filter { $0.mode == mode } }
         transcripts = items
@@ -164,6 +207,23 @@ final class LibraryModel: ObservableObject {
         try? store.delete(id: transcript.id)
         selection = nil
         reload()
+    }
+
+    /// Supprime pour de bon un enregistrement annulé.
+    func deleteCancelled(_ recording: CancelledRecording) {
+        player.stop()
+        PlumeSettings.shared.cancelled.delete(id: recording.id)
+        cancelledSelection = nil
+        reload()
+    }
+
+    /// Sections par jour d'enregistrement, comme l'historique.
+    var cancelledSections: [(title: String, items: [CancelledRecording])] {
+        let calendar = Calendar.current
+        let groups = Dictionary(grouping: cancelled) { calendar.startOfDay(for: $0.createdAt) }
+        return groups.keys.sorted(by: >).map { day in
+            (Self.dayTitle(day), (groups[day] ?? []).sorted { $0.createdAt > $1.createdAt })
+        }
     }
 
     func rename(_ speaker: String, to name: String, in transcript: Transcript) {
@@ -411,6 +471,16 @@ final class SettingsModel: ObservableObject {
     @Published var openShortcut: Shortcut { didSet { settings.openShortcut = openShortcut; onShortcutsChanged() } }
     @Published var pasteLastShortcut: Shortcut { didSet { settings.pasteLastShortcut = pasteLastShortcut; onShortcutsChanged() } }
     @Published var transformShortcut: Shortcut { didSet { settings.transformShortcut = transformShortcut; onShortcutsChanged() } }
+    @Published var cancelShortcut: Shortcut { didSet { settings.cancelShortcut = cancelShortcut; onShortcutsChanged() } }
+    @Published var restoreShortcut: Shortcut { didSet { settings.restoreShortcut = restoreShortcut; onShortcutsChanged() } }
+    /// Heures pendant lesquelles un enregistrement annulé reste récupérable (0 : jamais gardé).
+    @Published var cancelledRetentionHours: Int {
+        didSet {
+            settings.cancelledRetentionHours = cancelledRetentionHours
+            onCancelledRetentionChanged()
+        }
+    }
+    var onCancelledRetentionChanged: () -> Void = {}
     @Published var liveTranscript: Bool { didSet { settings.liveTranscript = liveTranscript } }
     @Published var modeSwitchAtStart: Bool { didSet { settings.modeSwitchAtStart = modeSwitchAtStart } }
     @Published var pasteAfterDictation: Bool { didSet { settings.pasteAfterDictation = pasteAfterDictation } }
@@ -463,6 +533,9 @@ final class SettingsModel: ObservableObject {
         openShortcut = settings.openShortcut
         pasteLastShortcut = settings.pasteLastShortcut
         transformShortcut = settings.transformShortcut
+        cancelShortcut = settings.cancelShortcut
+        restoreShortcut = settings.restoreShortcut
+        cancelledRetentionHours = settings.cancelledRetentionHours
         liveTranscript = settings.liveTranscript
         modeSwitchAtStart = settings.modeSwitchAtStart
         pasteAfterDictation = settings.pasteAfterDictation
@@ -681,6 +754,9 @@ final class SettingsModel: ObservableObject {
         openShortcut = settings.openShortcut
         pasteLastShortcut = settings.pasteLastShortcut
         transformShortcut = settings.transformShortcut
+        cancelShortcut = settings.cancelShortcut
+        restoreShortcut = settings.restoreShortcut
+        cancelledRetentionHours = settings.cancelledRetentionHours
         liveTranscript = settings.liveTranscript
         modeSwitchAtStart = settings.modeSwitchAtStart
         pasteAfterDictation = settings.pasteAfterDictation

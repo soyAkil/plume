@@ -24,14 +24,17 @@ public enum SettingsBackup {
         PlumeSettings.Key.muteWhileDictating, PlumeSettings.Key.polish, PlumeSettings.Key.autoSummary,
         PlumeSettings.Key.modeSwitchAtStart,
     ]
-    static let numberKeys = [PlumeSettings.Key.soundVolume, PlumeSettings.Key.audioRetentionDays]
+    static let numberKeys = [
+        PlumeSettings.Key.soundVolume, PlumeSettings.Key.audioRetentionDays, PlumeSettings.Key.cancelledRetentionHours,
+    ]
     static let stringKeys = [
         PlumeSettings.Key.model, PlumeSettings.Key.soundPack, PlumeSettings.Key.appearance, PlumeSettings.Key.polishInstructions,
         PlumeSettings.Key.language,
     ]
     static let shortcutKeys = [
         PlumeSettings.Key.dictationShortcut, PlumeSettings.Key.meetingShortcut, PlumeSettings.Key.openShortcut,
-        PlumeSettings.Key.pasteLastShortcut, PlumeSettings.Key.transformShortcut,
+        PlumeSettings.Key.pasteLastShortcut, PlumeSettings.Key.transformShortcut, PlumeSettings.Key.cancelShortcut,
+        PlumeSettings.Key.restoreShortcut,
     ]
 
     public static func snapshot(settings: PlumeSettings = .shared) -> File {
@@ -64,7 +67,8 @@ public enum SettingsBackup {
         // Seules les clés connues sont relues : un fichier bricolé ne peut rien écrire d'autre.
         for (key, value) in file.booleans where booleanKeys.contains(key) { defaults.set(value, forKey: key) }
         for (key, value) in file.numbers where numberKeys.contains(key) {
-            if key == PlumeSettings.Key.audioRetentionDays { defaults.set(Int(value), forKey: key) } else { defaults.set(value, forKey: key) }
+            let integer = key == PlumeSettings.Key.audioRetentionDays || key == PlumeSettings.Key.cancelledRetentionHours
+            if integer { defaults.set(Int(value), forKey: key) } else { defaults.set(value, forKey: key) }
         }
         for (key, value) in file.strings where stringKeys.contains(key) { defaults.set(value, forKey: key) }
         for key in shortcutKeys {

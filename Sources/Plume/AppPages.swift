@@ -13,7 +13,15 @@ struct HistoryPage: View {
             list.frame(width: 324)
             Rectangle().fill(UI.line).frame(width: 1)
             ZStack {
-                if let transcript = library.selected {
+                if library.filter == .cancelled {
+                    if let recording = library.selectedCancelled {
+                        CancelledDetail(recording: recording, app: app, library: library, player: library.player)
+                            .id(recording.id)
+                            .transition(.opacity.combined(with: .offset(y: 8)))
+                    } else {
+                        cancelledEmptyState.transition(.opacity)
+                    }
+                } else if let transcript = library.selected {
                     TranscriptDetail(transcript: transcript, library: library, player: library.player)
                         .id(transcript.id)
                         .transition(.opacity.combined(with: .offset(y: 8)))
@@ -23,6 +31,8 @@ struct HistoryPage: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(UI.ease, value: library.selection)
+            .animation(UI.ease, value: library.cancelledSelection)
+            .animation(UI.ease, value: library.filter)
         }
     }
 
@@ -30,10 +40,17 @@ struct HistoryPage: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(tr("Historique")).font(UI.sans(24, .medium)).tracking(-0.4)
+                    Text(showingCancelled ? tr("Annulés") : tr("Historique")).font(UI.sans(24, .medium)).tracking(-0.4)
                     Spacer()
                     if library.importing > 0 {
                         ProgressView().controlSize(.small).transition(.opacity)
+                    }
+                    PlumeButton(
+                        icon: .undo, kind: showingCancelled ? .primary : .secondary,
+                        help: showingCancelled ? tr("Revenir à l'historique") : tr("Enregistrements annulés, encore récupérables")
+                    ) {
+                        Sounds.play(.tab)
+                        withAnimation(UI.spring) { library.filter = showingCancelled ? .all : .cancelled }
                     }
                     PlumeButton(icon: .plus, help: tr("Transcrire un fichier audio")) { app.chooseFiles() }
                 }
@@ -60,6 +77,38 @@ struct HistoryPage: View {
             .padding(.bottom, 8)
 
             ScrollView {
+                if showingCancelled {
+                    cancelledList
+                } else {
+                    transcriptList
+                }
+            }
+        }
+    }
+
+    private var showingCancelled: Bool { library.filter == .cancelled }
+
+    private var cancelledList: some View {
+        LazyVStack(alignment: .leading, spacing: 2) {
+            ForEach(library.cancelledSections, id: \.title) { section in
+                Text(section.title)
+                    .font(UI.sans(12, .medium))
+                    .foregroundStyle(UI.text2)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 12)
+                    .padding(.bottom, 3)
+                ForEach(section.items) { recording in
+                    CancelledRow(recording: recording, selected: library.cancelledSelection == recording.id) {
+                        library.cancelledSelection = recording.id
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, UI.dockClearance)
+    }
+
+    private var transcriptList: some View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(library.sections, id: \.title) { section in
                         Text(section.title)
@@ -77,8 +126,23 @@ struct HistoryPage: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, UI.dockClearance)
-            }
+    }
+
+    private var cancelledEmptyState: some View {
+        VStack(spacing: 9) {
+            Icon(.undo, size: 28).foregroundStyle(UI.text3)
+            Text(tr("Aucun enregistrement annulé")).font(UI.sans(15, .medium))
+            Text(
+                app.settings.cancelledRetentionHours > 0
+                    ? tr("Un enregistrement annulé reste ici quelque temps, le temps de le récupérer.")
+                    : tr("Les enregistrements annulés ne sont pas gardés : à régler dans Réglages › Bibliothèque.")
+            )
+            .font(UI.sans(13))
+            .foregroundStyle(UI.text2)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 360)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {
@@ -104,7 +168,7 @@ private struct FilterBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(HistoryFilter.allCases) { filter in
+            ForEach(HistoryFilter.tabs) { filter in
                 let active = selection == filter
                 Button {
                     Sounds.play(.tab)
@@ -194,6 +258,176 @@ private struct HistoryRow: View {
         }
         .animation(UI.quick, value: hovering)
         .animation(UI.quick, value: selected)
+    }
+}
+
+/// Un enregistrement annulé dans la liste : même allure qu'une transcription, en retrait.
+private struct CancelledRow: View {
+    var recording: CancelledRecording
+    var selected: Bool
+    var action: () -> Void
+    @State private var hovering = false
+
+    private static let time: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Icon(recording.mode == .meeting ? .users : .mic, size: 13)
+                    .foregroundStyle(selected ? UI.onText : UI.text3)
+                    .frame(width: 24, height: 24)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(selected ? UI.text : UI.hover))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(Self.time.string(from: recording.createdAt))
+                            .font(UI.mono(12))
+                            .foregroundStyle(UI.text)
+                        Text(recording.mode.label)
+                            .font(UI.sans(13))
+                            .foregroundStyle(UI.text2)
+                        Spacer(minLength: 4)
+                        Text(Format.clock(recording.duration))
+                            .font(UI.mono(11))
+                            .foregroundStyle(UI.text3)
+                    }
+                    Text(recording.preview ?? (recording.text == nil ? tr("Pas encore transcrit") : tr("Rien entendu")))
+                        .font(UI.sans(13))
+                        .foregroundStyle(recording.preview == nil ? UI.text3 : UI.text2)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: UI.radius, style: .continuous)
+                    .fill(selected ? UI.selected : (hovering ? UI.hover : Color.clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle(scale: 0.985))
+        .onHover {
+            hovering = $0
+            if $0, !selected { Sounds.hover(.hoverRow) }
+        }
+        .animation(UI.quick, value: hovering)
+        .animation(UI.quick, value: selected)
+    }
+}
+
+/// Un enregistrement annulé : l'écouter, le récupérer dans l'historique, ou le jeter pour de bon.
+private struct CancelledDetail: View {
+    var recording: CancelledRecording
+    @ObservedObject var app: AppModel
+    @ObservedObject var library: LibraryModel
+    @ObservedObject var player: AudioPlayerModel
+    @State private var confirmingDelete = false
+
+    private var audio: [URL] { PlumeSettings.shared.cancelled.audioURLs(for: recording) }
+    private var restoring: Bool { library.restoring == recording.id }
+
+    private var title: String {
+        recording.mode == .meeting ? tr("Réunion annulée") : tr("Dictée annulée")
+    }
+
+    private var meta: String {
+        let date = DateFormatter()
+        date.locale = L10n.current.locale
+        date.dateStyle = .medium
+        date.timeStyle = .short
+        var parts = [date.string(from: recording.createdAt), Format.duration(recording.duration)]
+        if let app = recording.app { parts.append(app) }
+        return parts.joined(separator: "  ·  ")
+    }
+
+    /// « Supprimé automatiquement dans 3 jours ».
+    private var expiry: String? {
+        let hours = app.settings.cancelledRetentionHours
+        guard hours > 0 else { return nil }
+        let end = recording.cancelledAt.addingTimeInterval(Double(hours) * 3600)
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = L10n.current.locale
+        formatter.unitsStyle = .full
+        return tr("Supprimé automatiquement") + " " + formatter.localizedString(for: end, relativeTo: Date())
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title)
+                            .font(UI.sans(20, .medium))
+                            .tracking(-0.3)
+                        Text(meta)
+                            .font(UI.sans(13))
+                            .foregroundStyle(UI.text2)
+                    }
+                    Spacer(minLength: 12)
+                    HStack(spacing: 6) {
+                        if let text = recording.text, !text.isEmpty { CopyButton(text: text) }
+                        PlumeButton(icon: .trash, help: tr("Supprimer définitivement")) { confirmingDelete = true }
+                        PlumeButton(title: tr("Récupérer"), icon: .undo, kind: .primary, help: tr("Le ranger dans l'historique, comme s'il n'avait pas été annulé")) {
+                            app.restoreCancelled(recording)
+                        }
+                        .disabled(restoring || library.restoring != nil)
+                    }
+                }
+
+                if !audio.isEmpty {
+                    PlayerBar(player: player, id: "annule-" + recording.id, urls: audio, length: recording.duration)
+                        .padding(.top, 16)
+                }
+
+                HStack(spacing: 8) {
+                    if restoring {
+                        ProgressView().controlSize(.small)
+                        Text(recording.mode == .meeting ? tr("Transcription et séparation des voix…") : tr("En cours…"))
+                            .font(UI.sans(13)).foregroundStyle(UI.text2)
+                    } else if let expiry {
+                        Text(expiry).font(UI.sans(13)).foregroundStyle(UI.text3)
+                    }
+                }
+                .padding(.top, 12)
+
+                Rectangle().fill(UI.line).frame(height: 1).padding(.vertical, 18)
+
+                if let text = recording.text, !text.isEmpty {
+                    Text(text)
+                        .font(UI.sans(15))
+                        .lineSpacing(6)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: 640, alignment: .leading)
+                } else {
+                    Text(
+                        recording.mode == .meeting
+                            ? tr("Une réunion annulée n'est transcrite que si tu la récupères. Tu peux l'écouter d'abord.")
+                            : (recording.text == nil ? tr("Pas encore transcrit.") : tr("Rien d'intelligible dans cet enregistrement."))
+                    )
+                    .font(UI.sans(14))
+                    .foregroundStyle(UI.text2)
+                    .frame(maxWidth: 640, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, UI.pagePadding)
+            .padding(.top, 58)
+            .padding(.bottom, UI.dockClearance)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .confirmationDialog(tr("Supprimer cet enregistrement ?"), isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button(tr("Supprimer"), role: .destructive) {
+                Sounds.play(.refuse)
+                library.deleteCancelled(recording)
+            }
+            Button(tr("Annuler"), role: .cancel) {}
+        } message: {
+            Text(tr("Il ne pourra plus être récupéré."))
+        }
     }
 }
 
@@ -796,7 +1030,7 @@ struct SettingsPage: View {
     }
 
     private var shortcuts: some View {
-        SettingsSection("", footer: tr("Appui bref : démarrer, puis arrêter. Maintenir le raccourci de dictée : parler tant qu'il est tenu. Échap annule une dictée.")) {
+        SettingsSection("", footer: tr("Appui bref : démarrer, puis arrêter. Maintenir le raccourci de dictée : parler tant qu'il est tenu.")) {
             SettingRow(tr("Dicter")) {
                 ShortcutRecorder(shortcut: $settings.dictationShortcut, onRecording: settings.onRecordingShortcut)
             }
@@ -809,6 +1043,15 @@ struct SettingsPage: View {
                 ShortcutRecorder(shortcut: $settings.transformShortcut, optional: true, onRecording: settings.onRecordingShortcut)
             }
             .disabled(!settings.ai.isAvailable)
+            SettingRow(
+                tr("Annuler la dictée"),
+                detail: tr("Intercepté seulement pendant une dictée : le reste du temps, la touche garde son rôle. Une ou plusieurs touches, Échap compris.")
+            ) {
+                ShortcutRecorder(shortcut: $settings.cancelShortcut, optional: true, keyOnly: true, onRecording: settings.onRecordingShortcut)
+            }
+            SettingRow(tr("Récupérer le dernier enregistrement annulé"), detail: tr("Le transcrit et le colle, comme s'il n'avait pas été annulé.")) {
+                ShortcutRecorder(shortcut: $settings.restoreShortcut, optional: true, onRecording: settings.onRecordingShortcut)
+            }
             SettingRow(tr("Recoller la dernière dictée"), detail: tr("Quand le collage a raté, ou pour la réutiliser ailleurs.")) {
                 ShortcutRecorder(shortcut: $settings.pasteLastShortcut, optional: true, onRecording: settings.onRecordingShortcut)
             }
@@ -1013,6 +1256,20 @@ struct SettingsPage: View {
                 .frame(width: 150)
             }
             .disabled(settings.retention != .textAndAudio)
+            SettingRow(
+                tr("Garder les enregistrements annulés"),
+                detail: tr("Une dictée ou une réunion annulée par erreur se récupère depuis l'historique, le menu ou un raccourci. Passé ce délai, elle est supprimée.")
+            ) {
+                Picker("", selection: $settings.cancelledRetentionHours) {
+                    Text(tr("Ne pas garder")).tag(0)
+                    Text(tr("1 heure")).tag(1)
+                    Text(tr("24 heures")).tag(24)
+                    Text(tr("7 jours")).tag(24 * 7)
+                    Text(tr("30 jours")).tag(24 * 30)
+                }
+                .labelsHidden()
+                .frame(width: 150)
+            }
             SettingRow(tr("Tous les réglages"), detail: tr("Raccourcis, options, vocabulaire et applications dans un fichier, pour un autre Mac.")) {
                 HStack(spacing: 6) {
                     PlumeButton(title: tr("Importer…")) { settings.importSettings() }
@@ -1268,6 +1525,9 @@ private struct SettingToggle: View {
 struct ShortcutRecorder: View {
     @Binding var shortcut: Shortcut
     var optional = false
+    /// Une touche, seule ou avec modificateurs, Échap compris ; pas d'accord de modificateurs
+    /// seuls. Pour annuler la saisie, on reclique sur le bouton.
+    var keyOnly = false
     var onRecording: (Bool) -> Void = { _ in }
 
     @State private var recording = false
@@ -1317,7 +1577,9 @@ struct ShortcutRecorder: View {
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             let mask = HotkeyManager.mask(from: event.modifierFlags)
             if event.type == .keyDown {
-                if event.keyCode == 53 {  // Échap : on garde l'ancien raccourci
+                if keyOnly, event.keyCode == 53 {  // Échap, seul ou non, est une touche comme une autre
+                    finish(Shortcut(keyCode: 53, modifiers: mask))
+                } else if event.keyCode == 53 {  // Échap : on garde l'ancien raccourci
                     finish(nil)
                 } else if mask != 0 || (96...122).contains(Int(event.keyCode)) {
                     finish(Shortcut(keyCode: Int(event.keyCode), modifiers: mask))
@@ -1326,7 +1588,7 @@ struct ShortcutRecorder: View {
             }
             if mask == 0 {
                 // Tout est relâché : un accord d'au moins deux modificateurs est valide.
-                if heldMask.nonzeroBitCount >= 2 { finish(Shortcut(keyCode: nil, modifiers: heldMask)) }
+                if !keyOnly, heldMask.nonzeroBitCount >= 2 { finish(Shortcut(keyCode: nil, modifiers: heldMask)) }
                 heldMask = 0
             } else {
                 heldMask |= mask

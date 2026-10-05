@@ -48,6 +48,7 @@ enum Remote {
                 case "cancel": session.cancel()
                 case "pause": session.togglePause()
                 case "paste-last": session.pasteLast()
+                case "restore": session.restoreCancelled()
                 case "open": onOpen()
                 case "snapshot": onSnapshot?()
                 case "tiroir-ouvert": onDrawer?(true)

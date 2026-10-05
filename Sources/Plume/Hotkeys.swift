@@ -11,12 +11,14 @@ enum HotkeyAction: Int {
     case pasteLast = 4
     /// Dicte une consigne que l'IA locale applique au texte sélectionné.
     case transform = 5
+    /// Récupère le dernier enregistrement annulé.
+    case restore = 6
 
     var mode: RecordingMode? {
         switch self {
         case .dictation, .transform: return .dictation
         case .meeting: return .meeting
-        case .open, .pasteLast: return nil
+        case .open, .pasteLast, .restore: return nil
         }
     }
 }
@@ -33,7 +35,8 @@ final class HotkeyManager {
     var onRelease: ((HotkeyAction, TimeInterval) -> Void)?
     /// Une autre touche a été pressée pendant un maintien : ce n'était pas une dictée.
     var onCancel: ((HotkeyAction) -> Void)?
-    var onEscape: (() -> Void)?
+    /// Le raccourci d'annulation (Échap par défaut) a été pressé pendant un enregistrement.
+    var onCancelShortcut: (() -> Void)?
     /// Suspendu pendant la saisie d'un nouveau raccourci dans les réglages.
     var isPaused = false {
         didSet { if oldValue, !isPaused { waitingForRelease = true } }
@@ -41,14 +44,15 @@ final class HotkeyManager {
 
     private var handler: EventHandlerRef?
     private var carbonKeys: [HotkeyAction: EventHotKeyRef] = [:]
-    private var escapeKey: EventHotKeyRef?
+    private var cancelKey: EventHotKeyRef?
+    private var cancelEnabled = false
     private var pressDates: [HotkeyAction: Date] = [:]
     private var chordMasks: [HotkeyAction: Int] = [:]
     private var timer: Timer?
     private var chord: Chord?
 
     private static let signature: OSType = 0x504C_554D  // 'PLUM'
-    private static let escapeID: UInt32 = 99
+    private static let cancelID: UInt32 = 99
     /// Durée de maintien propre à partir de laquelle l'accord devient un « parler en maintenant ».
     private let holdThreshold: TimeInterval = 0.4
 
@@ -95,6 +99,8 @@ final class HotkeyManager {
         register(settings.openShortcut, for: .open)
         register(settings.pasteLastShortcut, for: .pasteLast)
         register(settings.transformShortcut, for: .transform)
+        register(settings.restoreShortcut, for: .restore)
+        setCancelEnabled(cancelEnabled)
     }
 
     private func register(_ shortcut: Shortcut, for action: HotkeyAction) {
@@ -110,17 +116,24 @@ final class HotkeyManager {
         if status == noErr, let ref { carbonKeys[action] = ref }
     }
 
-    /// Échap annule l'enregistrement en cours ; la touche n'est interceptée que pendant une dictée.
-    func setEscapeEnabled(_ enabled: Bool) {
-        if enabled, escapeKey == nil {
-            var ref: EventHotKeyRef?
-            let id = EventHotKeyID(signature: Self.signature, id: Self.escapeID)
-            if RegisterEventHotKey(UInt32(kVK_Escape), 0, id, GetApplicationEventTarget(), 0, &ref) == noErr {
-                escapeKey = ref
-            }
-        } else if !enabled, let ref = escapeKey {
+    /// Le raccourci d'annulation n'est intercepté que pendant une dictée : le reste du temps,
+    /// la touche (Échap…) garde son rôle dans les autres apps.
+    func setCancelEnabled(_ enabled: Bool) {
+        cancelEnabled = enabled
+        if let ref = cancelKey {
             UnregisterEventHotKey(ref)
-            escapeKey = nil
+            cancelKey = nil
+        }
+        let shortcut = PlumeSettings.shared.cancelShortcut
+        // Un accord de modificateurs seuls ne peut pas servir ici : il se confondrait avec ceux
+        // qui démarrent un enregistrement.
+        guard enabled, let keyCode = shortcut.keyCode else { return }
+        var ref: EventHotKeyRef?
+        let id = EventHotKeyID(signature: Self.signature, id: Self.cancelID)
+        if RegisterEventHotKey(
+            UInt32(keyCode), Self.carbonModifiers(shortcut.modifiers), id, GetApplicationEventTarget(), 0, &ref) == noErr
+        {
+            cancelKey = ref
         }
     }
 
@@ -148,8 +161,8 @@ final class HotkeyManager {
 
     private func carbonEvent(id: UInt32, pressed: Bool) {
         guard !isPaused else { return }
-        if id == Self.escapeID {
-            if pressed { onEscape?() }
+        if id == Self.cancelID {
+            if pressed { onCancelShortcut?() }
             return
         }
         guard let action = HotkeyAction(rawValue: Int(id)) else { return }
