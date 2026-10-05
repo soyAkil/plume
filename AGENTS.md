@@ -41,10 +41,11 @@ change, regarder un rendu `plume render … --demo`.
   `docs/DEVELOPPEMENT.md`, section « Essais sans micro ». Elles permettent de tout tester sans
   toucher à l'app installée ni à la vraie bibliothèque.
 - Chaque PR ajoute une ligne en haut de `CHANGELOG.md` :
-  `- Domaine : effet, en quelques mots (#numéro)`. L'effet, pas la façon ; une PR sans effet
-  notable (coquille, refacto) n'en ajoute pas. La ligne va dans la version du haut tant
-  qu'elle n'est pas publiée (pas de tag `v<version>`), dont elle met la date à jour ; sinon,
-  dans une nouvelle section `## <version suivante> — <date>`. On publie la version du haut.
+  `- <date> — Domaine : effet, en quelques mots (#numéro)`. L'effet, pas la façon ; une PR
+  sans effet notable (coquille, refacto) n'en ajoute pas. La ligne va dans la version du haut
+  tant qu'elle n'est pas publiée (pas de tag `v<version>`) ; sinon, dans une nouvelle section
+  `## <version suivante>`. On publie la version du haut, et son titre prend alors la date de
+  publication : `## <version> — <date>`.
 
 ## À ne jamais faire
 

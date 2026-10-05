@@ -1,14 +1,14 @@
 # Journal des modifications
 
-Une ligne par PR, la plus récente en haut. Le détail est dans la PR.
+Une ligne datée par PR, la plus récente en haut. Une version prend la date de sa publication. Le détail est dans la PR.
 
-## 0.9.1 — 2026-10-05
+## 0.9.1
 
-- Journal des modifications : ce fichier, une ligne par PR (#5)
-- Collage : la dictée est marquée éphémère, les gestionnaires de presse-papiers ne la gardent plus (#2)
-- Scripts : la compilation se rabat sur le SDK macOS 26 quand SwiftUI demande Xcode (#1)
-- README : en anglais, avec un visuel d'en-tête
+- 2026-10-05 — Journal des modifications : ce fichier, une ligne par PR (#5)
+- 2026-10-05 — Collage : la dictée est marquée éphémère, les gestionnaires de presse-papiers ne la gardent plus (#2)
+- 2026-10-05 — Scripts : la compilation se rabat sur le SDK macOS 26 quand SwiftUI demande Xcode (#1)
+- 2026-10-02 — README : en anglais, avec un visuel d'en-tête
 
 ## 0.9.0 — 2026-10-02
 
-- Première version publique : dictée vocale et transcription de réunions, 100 % locales
+- 2026-10-02 — Première version publique : dictée vocale et transcription de réunions, 100 % locales
