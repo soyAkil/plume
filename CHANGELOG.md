@@ -2,7 +2,7 @@
 
 Une ligne par PR, la plus récente en haut. Le détail est dans la PR.
 
-## Non publié
+## 0.9.1 — 2026-10-05
 
 - Journal des modifications : ce fichier, une ligne par PR (#5)
 - Collage : la dictée est marquée éphémère, les gestionnaires de presse-papiers ne la gardent plus (#2)
