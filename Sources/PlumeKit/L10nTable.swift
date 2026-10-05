@@ -93,7 +93,6 @@ enum L10nTable {
         "Couper le son de l'ordinateur pendant la dictée": "Mute the computer while dictating",
         "dans toute la transcription.": "throughout the transcript.",
         "Demandée à la première réunion, pour capter le son de l'ordinateur.": "Asked at the first meeting, to capture the computer's audio.",
-        "Dernière transcription": "Latest transcript",
         "Deux autorisations pour commencer": "Two permissions to get started",
         "Dicte ce qu'il faut faire du texte sélectionné": "Say what to do with the selected text",
         "Dicte ce qu'il faut écrire": "Say what to write",
@@ -393,5 +392,15 @@ enum L10nTable {
         "Ne pas garder": "Don't keep",
         "1 heure": "1 hour",
         "24 heures": "24 hours",
+        "Nouveautés": "What's new",
+        "en cours": "in progress",
+        "Commencer une transcription": "Start a transcription",
+        "Terminer la dictée": "Finish the dictation",
+        "Le texte se colle là où est ton curseur.": "The text is pasted where your cursor is.",
+        "La fenêtre se range, l'encoche t'écoute ; le texte se colle là où était ton curseur.": "The window steps aside and the notch listens; the text is pasted where your cursor was.",
+        "ou": "or",
+        "Dernières transcriptions": "Latest transcriptions",
+        "Tout voir": "See all",
+        "Rien pour l'instant : ta première dictée apparaîtra ici.": "Nothing yet: your first dictation will show up here.",
     ]
 }

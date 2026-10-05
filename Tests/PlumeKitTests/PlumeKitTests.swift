@@ -427,6 +427,43 @@ struct CancelledTests {
     }
 }
 
+@Suite("Journal des modifications")
+struct ChangelogTests {
+    @Test func litVersionsEtEntrées() {
+        let releases = Changelog.parse("""
+            # Journal des modifications
+
+            Une ligne par PR.
+
+            ## 1.0.0
+
+            ### 2026-10-05
+
+            - Historique : les enregistrements annulés restent récupérables (#7)
+
+            ### 2026-10-02
+
+            - README en anglais
+
+            ## 0.9.0 — 2026-10-02
+
+            ### 2026-10-02
+
+            - 2026-10-02 — Première version publique
+            """)
+        #expect(releases.map(\.version) == ["1.0.0", "0.9.0"])
+        #expect(releases[0].date == nil)
+        #expect(releases[1].date == "2026-10-02")
+        #expect(releases[0].entries[0] == Changelog.Entry(
+            date: "2026-10-05", domain: "Historique", text: "Les enregistrements annulés restent récupérables", pullRequest: 7))
+        #expect(releases[0].entries[1].domain == nil)
+        #expect(releases[0].entries[1].date == "2026-10-02")
+        #expect(releases[1].entries[0].text == "Première version publique")
+        #expect(releases[0].entries[1].text == "README en anglais")
+        #expect(Changelog.signature(of: releases) == "1.0.0|Les enregistrements annulés restent récupérables")
+    }
+}
+
 @Suite("Statistiques")
 struct StatsTests {
     func date(_ string: String) -> Date {

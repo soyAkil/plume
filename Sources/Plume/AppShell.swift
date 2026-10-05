@@ -58,6 +58,7 @@ struct AppShell: View {
         }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 12) {
+                ChangelogButton()
                 UpdatePill()
                 StatusPill(session: session, settings: app.settings)
             }
@@ -244,6 +245,107 @@ private struct DockItem: View {
 }
 
 /// Une mise à jour trouvée en arrière-plan : un bouton discret, qui ouvre le détail.
+/// « Nouveautés » : le journal des modifications (`CHANGELOG.md`), avec un point tant qu'il y a
+/// du nouveau qu'on n'a pas ouvert.
+private struct ChangelogButton: View {
+    @State private var open = false
+    @State private var seen = PlumeSettings.shared.changelogSeen
+    @State private var hovering = false
+    private let releases = ChangelogFile.releases
+
+    private var unseen: Bool { Changelog.signature(of: releases) != seen }
+
+    var body: some View {
+        if !releases.isEmpty {
+            Button {
+                Sounds.play(.tab)
+                open.toggle()
+                seen = Changelog.signature(of: releases)
+                PlumeSettings.shared.changelogSeen = seen
+            } label: {
+                HStack(spacing: 6) {
+                    Icon(.sparkles, size: 12)
+                    Text(tr("Nouveautés")).font(UI.sans(12, .medium))
+                    if unseen {
+                        Circle().fill(Theme.recording).frame(width: 6, height: 6).transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .foregroundStyle(hovering || open ? UI.text : UI.text2)
+                .padding(.horizontal, 9)
+                .frame(height: 22)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering || open ? UI.hover : .clear))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .onHover { hovering = $0 }
+            .animation(UI.quick, value: hovering)
+            .animation(UI.spring, value: unseen)
+            .popover(isPresented: $open, arrowEdge: .bottom) { ChangelogView(releases: releases) }
+        }
+    }
+}
+
+/// Le journal des modifications, version par version.
+struct ChangelogView: View {
+    var releases: [Changelog.Release]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(tr("Nouveautés")).font(UI.sans(18, .medium)).tracking(-0.3)
+                ForEach(releases) { release in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("Plume \(release.version)").font(UI.sans(14, .semibold))
+                            Text(release.date.map(ChangelogFile.format) ?? tr("en cours"))
+                                .font(UI.sans(12))
+                                .foregroundStyle(UI.text3)
+                        }
+                        ForEach(release.entries, id: \.self) { entry in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Circle().fill(UI.text3).frame(width: 4, height: 4).offset(y: -2)
+                                (Text(entry.domain.map { $0 + " · " } ?? "").foregroundColor(UI.text2)
+                                    + Text(entry.text).foregroundColor(UI.text))
+                                    .font(UI.sans(13))
+                                    .lineSpacing(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(20)
+            .frame(width: 420, alignment: .leading)
+        }
+        .frame(width: 420, height: 460)
+        .background(UI.window)
+    }
+}
+
+/// Le `CHANGELOG.md` livré avec l'app (ou celui du dépôt, pour un binaire de développement).
+enum ChangelogFile {
+    static let releases: [Changelog.Release] = {
+        let bundled = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
+        let development = Bundle.repositoryResource("../CHANGELOG.md")?.standardizedFileURL
+        guard let url = [bundled, development].compactMap({ $0 }).first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+            let text = try? String(contentsOf: url, encoding: .utf8)
+        else { return [] }
+        return Changelog.parse(text)
+    }()
+
+    /// « 5 oct. 2026 » à partir de « 2026-10-05 ».
+    static func format(_ date: String) -> String {
+        let input = DateFormatter()
+        input.locale = Locale(identifier: "en_US_POSIX")
+        input.dateFormat = "yyyy-MM-dd"
+        guard let parsed = input.date(from: date) else { return date }
+        let output = DateFormatter()
+        output.locale = L10n.current.locale
+        output.dateStyle = .medium
+        return output.string(from: parsed)
+    }
+}
+
 private struct UpdatePill: View {
     @ObservedObject private var updates = Updates.shared
 
@@ -391,50 +493,41 @@ struct HomePage: View {
                 }
                 ModelCard(session: session)
 
+                StartButton(session: session, shortcut: settings.dictationShortcut) { app.onStartFromWindow() }
+                    .rise(1)
+
                 HStack(spacing: 10) {
-                    TodayTile(stats: stats).rise(1)
-                    StreakTile(stats: stats).rise(2)
+                    TodayTile(stats: stats).rise(2)
+                    StreakTile(stats: stats).rise(3)
                     StatTile(
                         value: stats.timeSaved / 60, format: HomePage.span, label: tr("gagnés sur le clavier"),
                         detail: "\(HomePage.number(Double(stats.words))) " + tr("mots au total")
-                    ).rise(3)
+                    ).rise(4)
                     StatTile(
                         value: Double(stats.wordsPerMinute), format: { $0 < 1 ? "—" : HomePage.number($0) },
                         label: tr("mots par minute"), detail: tr("au clavier : 40")
-                    ).rise(4)
+                    ).rise(5)
                 }
                 .fixedSize(horizontal: false, vertical: true)
 
-                Card {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(tr("Activité")).font(UI.sans(14, .medium))
-                            Text(tr("mots dictés par jour")).font(UI.sans(13)).foregroundStyle(UI.text2)
-                        }
-                        ActivityHeatmap(days: stats.days)
-                    }
-                }
-                .rise(5)
-
-                if let latest = app.library.transcripts.first ?? session.lastTranscript {
+                // L'activité et les dernières transcriptions côte à côte, à la même hauteur.
+                HStack(alignment: .top, spacing: 10) {
                     Card {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 8) {
-                                Text(tr("Dernière transcription")).font(UI.sans(14, .medium))
-                                Text(TranscriptStore.title(for: latest)).font(UI.sans(13)).foregroundStyle(UI.text2)
-                                Spacer()
-                                CopyButton(text: latest.text)
-                                PlumeButton(title: tr("Ouvrir"), icon: .arrowUpRight) { app.open(latest) }
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(tr("Activité")).font(UI.sans(14, .medium))
+                                Text(tr("mots dictés par jour")).font(UI.sans(13)).foregroundStyle(UI.text2)
                             }
-                            Text(latest.preview)
-                                .font(UI.sans(14))
-                                .foregroundStyle(UI.text2)
-                                .lineSpacing(5)
-                                .lineLimit(3)
+                            ActivityHeatmap(days: stats.days)
                         }
+                        .frame(maxHeight: .infinity, alignment: .top)
                     }
-                    .rise(6)
+                    .frame(maxHeight: .infinity)
+                    RecentCard(app: app)
+                        .frame(maxHeight: .infinity)
                 }
+                .fixedSize(horizontal: false, vertical: true)
+                .rise(6)
             }
             .padding(.horizontal, UI.pagePadding)
             .padding(.top, 58)
@@ -458,6 +551,155 @@ struct HomePage: View {
         let whole = Int(minutes.rounded())
         if whole < 60 { return "\(whole) min" }
         return String(format: "%d h %02d", whole / 60, whole % 60)
+    }
+}
+
+/// Le grand bouton de l'accueil : la fenêtre se range et la dictée démarre dans l'encoche,
+/// pour qui préfère cliquer plutôt que retenir le raccourci. Pendant une dictée, il la termine.
+private struct StartButton: View {
+    @ObservedObject var session: SessionController
+    var shortcut: Shortcut
+    var action: () -> Void
+    @State private var hovering = false
+
+    private var recording: Bool { session.phase == .recording }
+
+    var body: some View {
+        Button {
+            Sounds.play(.confirm)
+            action()
+        } label: {
+            HStack(spacing: 14) {
+                Group {
+                    if recording {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous).frame(width: 12, height: 12)
+                    } else {
+                        Icon(.mic, size: 18)
+                    }
+                }
+                .foregroundStyle(UI.text)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(UI.onText))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(recording ? tr("Terminer la dictée") : tr("Commencer une transcription"))
+                        .font(UI.sans(17, .medium))
+                        .tracking(-0.3)
+                    Text(
+                        recording
+                            ? tr("Le texte se colle là où est ton curseur.")
+                            : tr("La fenêtre se range, l'encoche t'écoute ; le texte se colle là où était ton curseur.")
+                    )
+                    .font(UI.sans(13))
+                    .opacity(0.62)
+                }
+                Spacer(minLength: 12)
+                if !shortcut.isEmpty, !recording {
+                    Text(tr("ou") + " " + HotkeyManager.describe(shortcut))
+                        .font(UI.mono(12.5, .medium))
+                        .opacity(0.55)
+                }
+            }
+            .foregroundStyle(UI.onText)
+            .padding(.horizontal, 16)
+            .frame(height: 72)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: UI.radius, style: .continuous)
+                    .fill(recording ? Theme.recording : UI.text.opacity(hovering ? 0.88 : 1))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle(scale: 0.99))
+        .onHover {
+            hovering = $0
+            if $0 { Sounds.hover(.hoverCard) }
+        }
+        .animation(UI.quick, value: hovering)
+        .animation(UI.ease, value: recording)
+        .disabled(session.modelStatus != .ready && !recording)
+    }
+}
+
+/// Les trois dernières transcriptions, à côté de l'activité.
+private struct RecentCard: View {
+    @ObservedObject var app: AppModel
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(tr("Dernières transcriptions")).font(UI.sans(14, .medium))
+                    Spacer()
+                    Button {
+                        withAnimation(UI.spring) { app.page = .history }
+                    } label: {
+                        Text(tr("Tout voir")).font(UI.sans(13)).foregroundStyle(UI.text2)
+                    }
+                    .buttonStyle(PressStyle())
+                }
+                if app.recent.isEmpty {
+                    Text(tr("Rien pour l'instant : ta première dictée apparaîtra ici."))
+                        .font(UI.sans(13))
+                        .foregroundStyle(UI.text2)
+                        .padding(.top, 6)
+                } else {
+                    VStack(spacing: 2) {
+                        ForEach(app.recent) { transcript in
+                            RecentRow(transcript: transcript) { app.open(transcript) }
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+private struct RecentRow: View {
+    var transcript: Transcript
+    var action: () -> Void
+    @State private var hovering = false
+
+    private var when: String {
+        let calendar = Calendar.current
+        let time = DateFormatter()
+        time.locale = L10n.current.locale
+        time.timeStyle = .short
+        if calendar.isDateInToday(transcript.createdAt) { return time.string(from: transcript.createdAt) }
+        return LibraryModel.dayTitle(calendar.startOfDay(for: transcript.createdAt)) + ", " + time.string(from: transcript.createdAt)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Icon(transcript.mode == .meeting ? .users : transcript.mode == .imported ? .fileAudio : .mic, size: 12)
+                    .foregroundStyle(UI.text2)
+                    .frame(width: 22, height: 22)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(UI.hover))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(transcript.title ?? transcript.mode.label).font(UI.sans(13, .medium)).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(when).font(UI.sans(12)).foregroundStyle(UI.text3).lineLimit(1)
+                    }
+                    Text(transcript.preview)
+                        .font(UI.sans(13))
+                        .foregroundStyle(UI.text2)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: UI.radius, style: .continuous).fill(hovering ? UI.hover : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle(scale: 0.985))
+        .onHover {
+            hovering = $0
+            if $0 { Sounds.hover(.hoverRow) }
+        }
+        .animation(UI.quick, value: hovering)
     }
 }
 

@@ -39,6 +39,10 @@ final class AppModel: ObservableObject {
         didSet { if page != oldValue { Sounds.play(.page(Page.allCases.firstIndex(of: page) ?? 0)) } }
     }
     @Published private(set) var stats = LibraryStats()
+    /// Les trois dernières transcriptions, pour l'accueil.
+    @Published private(set) var recent: [Transcript] = []
+    /// Le bouton « Commencer une transcription » : la fenêtre se range, l'enregistrement part.
+    var onStartFromWindow: () -> Void = {}
 
     let session: SessionController
     let library = LibraryModel()
@@ -53,8 +57,11 @@ final class AppModel: ObservableObject {
         library.reload()
         let store = PlumeSettings.shared.store
         Task {
-            let computed = await Task.detached(priority: .utility) { LibraryStats(transcripts: store.list()) }.value
+            let (computed, latest) = await Task.detached(priority: .utility) {
+                (LibraryStats(transcripts: store.list()), store.list(limit: 3))
+            }.value
             stats = computed
+            recent = latest
         }
     }
 
@@ -62,6 +69,7 @@ final class AppModel: ObservableObject {
     func refreshNow() {
         library.reload()
         stats = LibraryStats(transcripts: PlumeSettings.shared.store.list())
+        recent = PlumeSettings.shared.store.list(limit: 3)
     }
 
     func open(_ transcript: Transcript) {

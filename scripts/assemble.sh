@@ -19,6 +19,7 @@ cp "$BIN/Plume" "$APP/Contents/MacOS/Plume"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Resources/LICENCES.md "$APP/Contents/Resources/LICENCES.md"
+cp CHANGELOG.md "$APP/Contents/Resources/CHANGELOG.md"
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp -R Resources/Sounds "$APP/Contents/Resources/Sounds"
 # Sparkle (mises à jour) : la bibliothèque et ses outils d'installation.

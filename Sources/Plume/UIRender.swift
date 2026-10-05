@@ -38,6 +38,10 @@ enum UIRender {
                     name: "app-\(page.rawValue)-\(suffix)", in: output, appearance: appearance)
             }
         }
+        // Le journal des modifications, tel qu'il s'ouvre depuis « Nouveautés ».
+        window(
+            ChangelogView(releases: ChangelogFile.releases), size: NSSize(width: 420, height: 460),
+            name: "nouveautes-sombre", in: output, appearance: .darkAqua)
         // Les enregistrements annulés, encore récupérables.
         app.page = .history
         app.library.filter = .cancelled

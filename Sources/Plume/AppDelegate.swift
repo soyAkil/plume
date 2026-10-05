@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         app.settings.onRecordingShortcut = { [weak self] recording in self?.hotkeys.isPaused = recording }
         app.settings.onModelChanged = { [weak self] in self?.session.loadModel() }
+        app.onStartFromWindow = { [weak self] in self?.startFromWindow() }
         app.settings.onCancelledRetentionChanged = { [weak self] in
             self?.session.purgeCancelled()
             self?.app.library.reload()
@@ -118,6 +119,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let count = store.dropAudio(olderThan: cutoff)
             if count > 0 { Log.write("audio supprimé sur \(count) transcription(s) de plus de \(days) jours") }
         }
+    }
+
+    /// Bouton de l'accueil : Plume s'efface pour rendre la main à l'app d'avant (celle où le
+    /// texte sera collé), puis l'enregistrement démarre dans l'encoche. Pendant une dictée, le
+    /// même bouton la termine.
+    private func startFromWindow() {
+        if session.phase == .recording {
+            session.stop()
+            return
+        }
+        NSApp.hide(nil)
+        // Le temps que l'app d'avant repasse au premier plan : c'est elle que la dictée retient.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.session.start(.dictation) }
     }
 
     /// Le raccourci d'annulation n'est intercepté que pendant une dictée (pas pendant une

@@ -105,6 +105,7 @@ public final class PlumeSettings: @unchecked Sendable {
         static let dictationShortcut = "dictationShortcut"
         static let meetingShortcut = "meetingShortcut"
         static let onboarded = "onboarded"
+        static let changelogSeen = "changelogSeen"
     }
 
     // MARK: Dossiers
@@ -300,6 +301,12 @@ public final class PlumeSettings: @unchecked Sendable {
     public var modeSwitchAtStart: Bool {
         get { defaults.bool(forKey: Key.modeSwitchAtStart) }
         set { defaults.set(newValue, forKey: Key.modeSwitchAtStart) }
+    }
+
+    /// Empreinte du journal des modifications la dernière fois que « Nouveautés » a été ouvert.
+    public var changelogSeen: String {
+        get { defaults.string(forKey: Key.changelogSeen) ?? "" }
+        set { defaults.set(newValue, forKey: Key.changelogSeen) }
     }
 
     public var onboarded: Bool {

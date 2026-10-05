@@ -15,6 +15,12 @@ Tout ce que Plume sait faire, en détail. Pour l'essentiel, voir le [README](../
 | Clic sur l'icône de la barre de menus | Ouvre la fenêtre de Plume (clic droit : menu court, avec les dernières dictées à recopier). |
 | `1` `2` `3` `4` `5`, `T`, `S` dans la fenêtre | Accueil, historique, vocabulaire, applications, réglages ; thème clair / sombre ; sons. |
 
+Sans raccourci : le grand bouton **Commencer une transcription** de l'accueil range la fenêtre
+(la main revient à l'app d'avant, celle où le texte sera collé) et lance la dictée dans
+l'encoche ; pendant une dictée, il la termine. L'accueil montre aussi les trois dernières
+transcriptions, et **Nouveautés**, en haut à droite de la fenêtre, ouvre le journal des
+modifications (`CHANGELOG.md`), avec un point tant qu'il y a du nouveau.
+
 Trois raccourcis de plus, sans touche par défaut (à choisir dans **Réglages › Raccourcis**) :
 **Recoller la dernière dictée** (quand le collage a raté, ou pour la réutiliser ailleurs),
 **Récupérer le dernier enregistrement annulé** et **Transformer la sélection** (voir
