@@ -40,6 +40,10 @@ change, regarder un rendu `plume render … --demo`.
   `PLUME_FAKE_MIC`, `PLUME_FAKE_SYSTEM`, `PLUME_NO_PASTE`, `PLUME_VERBOSE`…) : voir
   `docs/DEVELOPPEMENT.md`, section « Essais sans micro ». Elles permettent de tout tester sans
   toucher à l'app installée ni à la vraie bibliothèque.
+- Chaque PR ajoute une ligne en haut de « Non publié » dans `CHANGELOG.md` :
+  `- Domaine : effet, en quelques mots (#numéro)`. L'effet, pas la façon ; une PR sans effet
+  notable (coquille, refacto) n'en ajoute pas. À la publication, « Non publié » devient
+  `## <version> — <date>`.
 
 ## À ne jamais faire
 
