@@ -1,3 +1,4 @@
+import AudioToolbox
 import Foundation
 import Testing
 
@@ -451,6 +452,81 @@ struct CancelledTests {
         #expect(SettingsBackup.shortcutKeys.contains(PlumeSettings.Key.cancelShortcut))
         #expect(SettingsBackup.shortcutKeys.contains(PlumeSettings.Key.restoreShortcut))
         #expect(SettingsBackup.numberKeys.contains(PlumeSettings.Key.cancelledRetentionHours))
+    }
+}
+
+@Suite("Audio files")
+struct AudioFileTests {
+    /// Four tones plus noise from a fixed-seed generator: every run encodes the same signal.
+    static func signal(count: Int) -> [Float] {
+        var seed: UInt32 = 1
+        return (0..<count).map { i in
+            let t = Double(i) / 16_000
+            var value = 0.0
+            for frequency in [220.0, 660.0, 1500.0, 3200.0] {
+                value += 0.1 * sin(2 * .pi * frequency * t)
+            }
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            value += (Double(seed) / Double(UInt32.max) * 2 - 1) * 0.01
+            return Float(value)
+        }
+    }
+
+    static func rms(_ samples: [Float]) -> Double {
+        (samples.reduce(0.0) { $0 + Double($1) * Double($1) } / Double(samples.count)).squareRoot()
+    }
+
+    /// Encoded audio bytes, the value `afinfo` prints as "audio bytes": the file's header adds
+    /// several KB, which on a 10 s file would blur 32 against 48 kbps.
+    static func audioDataBytes(_ url: URL) throws -> Int {
+        var file: AudioFileID?
+        guard AudioFileOpenURL(url as CFURL, .readPermission, 0, &file) == noErr, let file else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        defer { AudioFileClose(file) }
+        var bytes: UInt64 = 0
+        var size = UInt32(MemoryLayout<UInt64>.size)
+        guard AudioFileGetProperty(file, kAudioFilePropertyAudioDataByteCount, &size, &bytes) == noErr else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return Int(bytes)
+    }
+
+    /// Writes and reads back through the app's own functions, in a temporary folder.
+    static func roundTrip(_ input: [Float], check: ([Float], URL) throws -> Void) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("2026-10-07_10-00-00_mic.m4a")
+        try AudioIO.writeM4A(input, to: url)
+        try check(try AudioIO.loadSamples(url), url)
+    }
+
+    @Test func writeThenLoadRoundTrip() throws {
+        let input = Self.signal(count: 160_000)
+        try Self.roundTrip(input) { output, url in
+            // AVAudioFile trims the encoder's priming; the slack covers the last frame's padding
+            // and FluidAudio stopping early at the end of the stream.
+            #expect(abs(output.count - input.count) <= 2_112)
+            #expect(abs(20 * log10(Self.rms(output) / Self.rms(input))) <= 1)
+            // 48 kbps × 10 s = 60,000 bytes ± 15 %: 40 kbps (50,000) or 32 kbps (40,000) falls outside.
+            let bytes = try Self.audioDataBytes(url)
+            #expect((51_000...69_000).contains(bytes))
+        }
+    }
+
+    /// Nothing at all, a 50 ms tap, and a meeting channel: 1 s of lead silence, then more than
+    /// one 10 s write chunk.
+    @Test(arguments: [0, 800, 400_000])
+    func roundTripKeepsLength(count: Int) throws {
+        let lead = count > 16_000 ? 16_000 : 0
+        let input = [Float](repeating: 0, count: lead) + Self.signal(count: count - lead)
+        try Self.roundTrip(input) { output, _ in
+            #expect(abs(output.count - input.count) <= 2_112)
+            if !input.isEmpty {
+                #expect(abs(20 * log10(Self.rms(output) / Self.rms(input))) <= 1)
+            }
+        }
     }
 }
 

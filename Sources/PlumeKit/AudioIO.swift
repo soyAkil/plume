@@ -8,14 +8,16 @@ public enum AudioIO {
         try AudioConverter().resampleAudioFile(url)
     }
 
-    /// Encodes mono 16 kHz samples as AAC (.m4a), ~14 MB per hour.
+    /// Encodes mono 16 kHz samples as AAC (.m4a), about 22 MB per hour. 48 kbps is the highest rate
+    /// Apple's encoder accepts at 16 kHz mono (64 kbps throws), and it keeps re-transcription as
+    /// accurate as the raw samples.
     public static func writeM4A(_ samples: [Float], to url: URL) throws {
         let sampleRate = Double(SpeechEngine.sampleRate)
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: 32_000,
+            AVEncoderBitRateKey: 48_000,
         ]
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else {
             throw CocoaError(.fileWriteUnknown)
