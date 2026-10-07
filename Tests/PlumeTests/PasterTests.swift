@@ -97,3 +97,25 @@ struct PasterTests {
         }
     }
 }
+
+/// Smart insert never reads a password field. macOS reports one as role `AXTextField` with
+/// subrole `AXSecureTextField`; the literals below are on purpose, so a wrong constant in the
+/// implementation fails here.
+@Suite("Secure field check")
+struct SecureFieldTests {
+    @Test(arguments: [
+        ("AXTextField", "AXSecureTextField", true),  // a real password field
+        ("AXSecureTextField", nil, true),  // an app that reports it as the role
+        (nil, "AXSecureTextField", true),
+        ("AXSecureTextField", "AXTextField", true),
+        ("AXTextField", nil, false),
+        ("AXTextField", "AXSearchField", false),
+        ("AXTextArea", nil, false),
+        ("AXTextField", "", false),
+        (nil, nil, false),  // the app exposes neither: not treated as secure
+        ("axsecuretextfield", nil, false),  // case-sensitive, like AX strings
+    ] as [(String?, String?, Bool)])
+    func secureFieldIsRecognised(role: String?, subrole: String?, expected: Bool) {
+        #expect(Paster.isSecure(role: role, subrole: subrole) == expected)
+    }
+}
