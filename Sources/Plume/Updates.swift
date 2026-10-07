@@ -1,9 +1,9 @@
 import AppKit
 import Sparkle
 
-/// Automatic updates for the distributed app (Sparkle). The feed and the signing key
-/// are written into Info.plist by `scripts/release.sh`; a local build has none
-/// and therefore never looks for an update.
+/// Automatic updates (Sparkle). The feed and the signing key are written into Info.plist by
+/// `scripts/release.sh`, and by `scripts/build.sh` for dev builds; a binary without them,
+/// such as `.build` or a trial release, never looks for an update.
 @MainActor
 final class Updates: NSObject, ObservableObject, SPUStandardUserDriverDelegate, SPUUpdaterDelegate {
     static let shared = Updates()
@@ -24,7 +24,20 @@ final class Updates: NSObject, ObservableObject, SPUStandardUserDriverDelegate, 
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
 
-    /// True in the distributed app, false in a local build.
+    /// The running app's version and build number, for `plume doctor` and the launch log line.
+    static var runningVersion: String { versionLine(info: Bundle.main.infoDictionary ?? [:]) }
+
+    /// "<version> (<build>)", for example `1.0.2-dev+8553033 (202610071530)`: a dev build is
+    /// told apart by both. Without a version (a bare `.build` binary), "—", even if a build
+    /// number is present. Nonisolated so tests call it off the main actor.
+    nonisolated static func versionLine(info: [String: Any]) -> String {
+        guard let short = info["CFBundleShortVersionString"] as? String else { return "—" }
+        guard let build = info["CFBundleVersion"] as? String else { return short }
+        return "\(short) (\(build))"
+    }
+
+    /// True when Info.plist has a feed and key (releases and dev builds); false in a `.build`
+    /// binary or a trial release.
     var isAvailable: Bool { controller != nil }
 
     func start() {

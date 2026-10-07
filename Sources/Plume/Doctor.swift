@@ -12,6 +12,7 @@ enum Doctor {
             CLI.emit(label.padding(toLength: 30, withPad: " ", startingAt: 0) + value)
         }
 
+        line(tr("Version"), Updates.runningVersion)
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: PlumeSettings.bundleID)
         line(tr("App running"), running.isEmpty ? tr("no") : tr("yes"))
         line(tr("Library"), settings.libraryURL.path)

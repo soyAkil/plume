@@ -415,6 +415,7 @@ enum L10nTable {
         "Usage: plume transcribe <file> [--mode dictee|reunion|import] [--save]": "Usage : plume transcribe <fichier> [--mode dictee|reunion|import] [--save]",
         "Usage: plume transform \"instruction\" < text": "Usage : plume transform \"consigne\" < texte",
         "Use this model": "Utiliser ce modèle",
+        "Version": "Version",
         "Vocabulary": "Vocabulaire",
         "Voice commands": "Commandes vocales",
         "Voiceprint": "Empreinte vocale",

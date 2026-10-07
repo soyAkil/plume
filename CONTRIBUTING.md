@@ -13,7 +13,7 @@ Open an [issue](https://github.com/soyAkil/plume/issues/new/choose): a form guid
 ## Proposing a change
 
 1. Fork the repository and make a branch (`git switch -c my-feature`).
-2. Build it and try it: `./scripts/build.sh --install` (an Apple Silicon Mac, macOS 15 or later, the Command Line Tools; Xcode is not needed).
+2. Build it and try it: `./scripts/build.sh --install` (an Apple Silicon Mac, macOS 15 or later, the Command Line Tools; Xcode is not needed). The app then shows as `<version>-dev+<commit>`. If it offers a Plume release, accepting replaces your build with the maintainer-signed app, and macOS asks for Microphone, Accessibility and System Audio Recording again. The same happens when you go back to your own build.
 3. Run the tests: `./scripts/test.sh`. The same compile-and-test runs on every pull request.
 4. Open a pull request that explains *why*, with a screenshot or a short video if the interface changes.
 

@@ -289,6 +289,6 @@ transcription with these keys:
 a Stream Deck. The links `plume://dictation`, `plume://meeting`, `plume://stop`, `plume://pause`,
 `plume://paste`, `plume://restore`, `plume://transform`, `plume://cancel` and `plume://open` do
 the same from Shortcuts or any app (the French `dictee`, `reunion`, `recoller`, `recuperer`,
-`transformer`, `annuler` and `ouvrir` still work). `plume doctor` shows the state of
-permissions, model, local AI and screens; `plume format "text"` shows what the formatting
+`transformer`, `annuler` and `ouvrir` still work). `plume doctor` shows the version and the
+state of permissions, model, local AI and screens; `plume format "text"` shows what the formatting
 does to raw text; `plume polish` and `plume transform` try the local AI.

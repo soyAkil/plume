@@ -96,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         Remote.onDrawer = { [weak self] open in self?.island.debugPin(open) }
         if !TestHooks.headless { setupStatusItem() }
+        Log.write("launch: Plume \(Updates.runningVersion)")
         Updates.shared.start()
         session.loadModel()
         purgeOldAudio()

@@ -89,7 +89,7 @@ So anyone can read exactly what an app that hears everything you say does with i
 
 - An Apple Silicon Mac, macOS 15 or later, and the Command Line Tools (Swift 6). Xcode is not needed.
 - `swift build -c release` — compiles the app and the `plume` command. With only the Command Line Tools and the macOS 27 SDK, SwiftUI's macros are missing: point `SDKROOT` at an installed macOS 26 SDK (the scripts below do it for you).
-- `./scripts/build.sh` — assembles a double-clickable `build/Plume.app`, signed with a local certificate kept in its own keychain so macOS permissions survive rebuilds. `./scripts/build.sh --install` puts it in `/Applications`, links `plume` into `~/.local/bin` and relaunches it.
+- `./scripts/build.sh` — assembles a double-clickable `build/Plume.app`, signed with a local certificate kept in its own keychain so macOS permissions survive rebuilds of your own build (switching to or from a release signed on another Mac asks for them again). `./scripts/build.sh --install` puts it in `/Applications`, links `plume` into `~/.local/bin` and relaunches it. The build is labelled `<version>-dev+<commit>`, and a newer release is offered over it.
 - `./scripts/test.sh` — the tests (Swift Testing; the script finds the framework without Xcode). The same compile-and-test runs on every pull request.
 
 A build you make yourself is not notarized, so the first launch needs an allow in System Settings › Privacy & Security. Published releases aren't notarized yet either — that needs an Apple Developer account and is on the list — so they get the same one-time "Open Anyway". `./scripts/release.sh <version>` makes the signed `.dmg` and the update feed; `publish.sh` uploads them. Those only matter for the project's own releases; see [docs/RELEASING.md](docs/RELEASING.md).
@@ -127,7 +127,7 @@ PLUME_FAKE_MIC=me.wav PLUME_FAKE_SYSTEM=them.wav PLUME_NO_PASTE=1 PLUME_VERBOSE=
 
 Always set `PLUME_DEFAULTS` for a trial: without it, a development binary shares the settings of the installed app. `PLUME_FAKE_CALL=zoom.us` simulates a call starting five seconds after launch, to see the offer in the island.
 
-`plume doctor` reports permissions, model, local AI and screens. `plume transcribe mic.wav --system computer.wav` runs a two-channel meeting from files; `plume diarize file.wav` shows the voices it finds; `plume format "raw text"` shows what the formatting chain does without any audio; `plume render <folder> --demo` draws the whole interface off-screen with an invented library, which is how the screenshots above were made. Test dictations come from the Mac's own speech synthesis: `say -v Jacques -o d.aiff "Bonjour, à la ligne, …"`, then `afconvert -f WAVE -d LEI16@16000 -c 1 d.aiff d.wav`.
+`plume doctor` reports the version, permissions, model, local AI and screens. `plume transcribe mic.wav --system computer.wav` runs a two-channel meeting from files; `plume diarize file.wav` shows the voices it finds; `plume format "raw text"` shows what the formatting chain does without any audio; `plume render <folder> --demo` draws the whole interface off-screen with an invented library, which is how the screenshots above were made. Test dictations come from the Mac's own speech synthesis: `say -v Jacques -o d.aiff "Bonjour, à la ligne, …"`, then `afconvert -f WAVE -d LEI16@16000 -c 1 d.aiff d.wav`.
 
 ### Contributing
 

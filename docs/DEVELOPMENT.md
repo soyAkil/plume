@@ -21,6 +21,48 @@ fall back on their own to an installed macOS 26 SDK (`scripts/sdk.sh`). For a ha
 `swift build`:
 `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk swift build -c release`.
 
+### Running a branch as your daily app
+
+`./scripts/build.sh --install`, from any branch or worktree, replaces the installed app with that
+build. Every `build.sh` build is a dev build: Settings › About, the first line of `plume doctor`
+and the `launch:` line of `~/Library/Logs/Plume/plume.log` show `<version>-dev+<commit>`, for
+example `1.0.2-dev+8553033`, ending in `.dirty` when the tree had uncommitted or untracked
+files. `<version>` is the top heading of `CHANGELOG.md`.
+
+A dev build's build number is the time it was built (`YYYYMMDDHHMM`; `PLUME_DEV_BUILD=<number>` overrides
+it). It checks the same update feed as releases, so a release built after it is offered over it,
+and an older one is not. "After" means when `release.sh` ran, on that Mac's clock, not when the
+release was published. The release is only offered: a dev build never downloads or installs an
+update by itself. Dismiss an offer rather than skipping it: a skipped version stays hidden from
+the released app too.
+
+Before going back to a release, or accepting an offered release built from older code, read the
+`CHANGELOG.md` lines since that release for "no longer sees": it may not see data the dev build
+wrote (1.0.1 does not see 1.0.2's vocabulary, voiceprint, cancelled recordings or appearance
+and sound choices, #16). Two ways back:
+
+- Install the latest disk image. This works even if the dev build does not launch, and `curl`
+  adds no quarantine flag, so there is no Gatekeeper prompt:
+  ```sh
+  curl -fL -o /tmp/Plume.dmg https://github.com/soyAkil/plume/releases/latest/download/Plume.dmg &&
+  hdiutil attach -nobrowse -mountpoint /tmp/plume-dmg /tmp/Plume.dmg &&
+  { pkill -x Plume; sleep 0.6; } &&
+  rm -rf /Applications/Plume.app && ditto /tmp/plume-dmg/Plume.app /Applications/Plume.app &&
+  hdiutil detach /tmp/plume-dmg && open /Applications/Plume.app
+  ```
+- From a `main` checkout, run `PLUME_DEV_BUILD=1 ./scripts/build.sh --install`, then menu bar ›
+  Check for updates… › install. Build `1` is older than every release.
+
+Permissions follow the certificate. A dev build is signed with this Mac's `Plume Local Signing`
+certificate, so rebuilding one dev build over another keeps its permissions. A release signed on
+another Mac uses a different certificate, even though it has the same name. So every switch
+between a release and a dev build, in either direction, makes macOS ask again for Microphone,
+Accessibility and System Audio Recording: going back by either way above, accepting an offered
+release, or installing a dev build over a release. Only the Mac that signs releases avoids this.
+After a switch, grant the permissions, then check System Settings › Privacy & Security. Each of
+the three should list Plume as on. Accessibility can stay switched on in that list while it no
+longer works: if pasting fails, remove Plume with − and add it again.
+
 ## Code map
 
 ```
