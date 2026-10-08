@@ -300,29 +300,68 @@ public actor SpeechEngine {
         let result = try await asr.transcribe(audio, decoderState: &state)
         let words = Self.words(from: result.tokenTimings ?? [])
         return EngineOutput(
-            text: result.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            text: Self.removingUnknownTokens(result.text.trimmingCharacters(in: .whitespacesAndNewlines)),
             words: words,
             duration: Double(samples.count) / Double(Self.sampleRate),
             processing: result.processingTime
         )
     }
 
-    /// Timestamped words. An isolated punctuation mark ("?", "!", ":" in the French style) is
-    /// attached to the preceding word, so it never opens a speaker turn.
+    /// Timestamped words, without unknown-token markers. An isolated punctuation mark ("?", "!",
+    /// ":" in the French style) is attached to the preceding word, so it never opens a speaker turn.
     static func words(from timings: [TokenTiming]) -> [Word] {
+        let base = buildWordTimings(from: timings).map { Word(text: $0.word, start: $0.startTime, end: $0.endTime) }
         var words: [Word] = []
-        for timing in buildWordTimings(from: timings) {
-            let isPunctuation = timing.word.allSatisfy { ".,;:!?…»".contains($0) }
+        for word in removingUnknownTokens(base) {
+            let isPunctuation = word.text.allSatisfy { attachedPunctuation.contains($0) }
             if isPunctuation, var last = words.popLast() {
-                let separator = timing.word.first.map { "?!:;»".contains($0) } == true ? " " : ""
-                last.text += separator + timing.word
-                last.end = timing.endTime
+                let separator = word.text.first.map { "?!:;»".contains($0) } == true ? " " : ""
+                last.text += separator + word.text
+                last.end = word.end
                 words.append(last)
             } else {
-                words.append(Word(text: timing.word, start: timing.startTime, end: timing.endTime))
+                words.append(word)
             }
         }
         return words
+    }
+
+    /// Parakeet's marker for a sound it has no token for. Kept out of everything Plume shows or saves.
+    static let unknownToken = "<unk>"
+
+    /// Marks attached to the previous word, never a word of their own. One set, so `text` and
+    /// `words` treat them alike.
+    static let attachedPunctuation = ".,;:!?…»"
+
+    /// The words without markers. Only a word holding one changes: the markers go, an emptied
+    /// word is dropped, and a word left with punctuation only is glued to the previous word with
+    /// no space (the model wrote none). The previous word keeps its own times: `LiveTranscriber`
+    /// and diarization go by its midpoint. A dropped word's time span is lost; the others keep theirs.
+    static func removingUnknownTokens(_ words: [Word]) -> [Word] {
+        var result: [Word] = []
+        for var word in words {
+            guard word.text.contains(unknownToken) else {
+                result.append(word)
+                continue
+            }
+            word.text = word.text.replacingOccurrences(of: unknownToken, with: "")
+            if word.text.isEmpty { continue }
+            if word.text.allSatisfy({ attachedPunctuation.contains($0) }), var last = result.popLast() {
+                last.text += word.text
+                result.append(last)
+            } else {
+                result.append(word)
+            }
+        }
+        return result
+    }
+
+    /// The same on a text: split on spaces, the word version, joined with single spaces. A text
+    /// without a marker comes back byte for byte.
+    static func removingUnknownTokens(_ text: String) -> String {
+        guard text.contains(unknownToken) else { return text }
+        let words = text.split(separator: " ").map { Word(text: String($0), start: 0, end: 0) }
+        return removingUnknownTokens(words).map(\.text).joined(separator: " ")
     }
 
     // MARK: - Diarization

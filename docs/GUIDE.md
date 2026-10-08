@@ -255,7 +255,7 @@ transcription with these keys:
 | `mode` | `dictation`, `meeting` or `imported` |
 | `device`, `engine` | Device and transcription engine |
 | `duration` | Duration in seconds |
-| `text`, `rawText` | Final text, and the model's raw output before cleanup |
+| `text`, `rawText` | Final text, and the model's output before cleanup, unknown-token markers removed |
 | `segments` | Timestamped parts: `id`, `speaker`, `channel` (`mic` or `system`), `start`, `end`, `text` |
 | `speakers` | Speaker names or labels |
 | `audioFiles` | Audio file names, relative to the transcription's folder |

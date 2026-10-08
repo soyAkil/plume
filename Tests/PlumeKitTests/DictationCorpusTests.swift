@@ -53,6 +53,7 @@ struct DictationCorpusTests {
         .same("Le chien le chat le chien le chat."),
         .same("Bah oui, bien sûr."),
         .same("Ben voilà, c'est fait."),
+        .same("Le mot ainsi vient du latin."),
     ]
 
     /// Phrases close to a command that are not one.
@@ -176,6 +177,13 @@ struct DictationCorpusTests {
         Case(raw: "Bonjour à tous. Merci pour votre message.", expected: "bonjour à tous. merci pour votre message.", options: DictationOptions(style: .casual), final: false),
     ]
 
+    /// Parakeet's `<unk>` markers, removed by the engine before formatting.
+    static let unknownTokens: [Case] = [
+        Case(raw: "Le mot <unk>ssi<unk> <unk> vient du latin.", expected: "Le mot ssi vient du latin."),
+        Case(raw: "<unk>, bonjour à tous.", expected: "Bonjour à tous."),
+        Case(raw: "<unk>", expected: ""),
+    ]
+
     /// Known issues: the expected result, not today's.
     static let knownIssues: [Case] = [
         Case(raw: "Le score final est de 2 points.", expected: "Le score final est de 2 points.", knownIssue: "'2 points' at the end of a sentence becomes ':'"),
@@ -200,8 +208,14 @@ struct DictationCorpusTests {
             knownIssue: "the casual style lowercases the lines of an excerpt"),
     ]
 
+    /// From raw model output, as `SpeechEngine.transcribe` hands it on, to pasted text.
+    private func formatted(_ c: Case) -> DictationResult {
+        Pipeline.format(
+            SpeechEngine.removingUnknownTokens(c.raw), options: c.options, replacements: c.vocabulary, final: c.final)
+    }
+
     private func check(_ c: Case) {
-        let result = Pipeline.format(c.raw, options: c.options, replacements: c.vocabulary, final: c.final)
+        let result = formatted(c)
         #expect(result.text == c.expected)
         #expect(result.pressReturn == c.pressReturn)
     }
@@ -213,10 +227,11 @@ struct DictationCorpusTests {
     @Test(arguments: commandsOff) func withoutVoiceCommandsNothingRuns(_ c: Case) { check(c) }
     @Test(arguments: vocabulary) func vocabularyReplacesWholeWords(_ c: Case) { check(c) }
     @Test(arguments: styles) func styleFollowsTheApp(_ c: Case) { check(c) }
+    @Test(arguments: unknownTokens) func unknownTokenMarkersAreRemoved(_ c: Case) { check(c) }
 
     @Test(arguments: knownIssues) func knownIssuesStayMarked(_ c: Case) {
         guard let issue = c.knownIssue else { return check(c) }
-        let result = Pipeline.format(c.raw, options: c.options, replacements: c.vocabulary, final: c.final)
+        let result = formatted(c)
         // Only the expectation that fails today is marked: the other keeps watching.
         withKnownIssue(Comment(rawValue: issue)) {
             #expect(result.text == c.expected)

@@ -1,3 +1,4 @@
+import FluidAudio
 import Foundation
 import Testing
 
@@ -897,5 +898,86 @@ struct LocalizationTests {
         }
         #expect(checked > 100)
         #expect(missing.isEmpty, "Keys missing from L10nTable.french: \(missing)")
+    }
+}
+
+/// Parakeet writes `<unk>` for a sound it has no token for. The marker never reaches pasted,
+/// shown or saved text; the words around it are kept.
+@Suite("Unknown-token markers")
+struct UnknownTokenTests {
+    @Test(arguments: [
+        ("Tous les noms suivis du mot <unk>ssi<unk> <unk> qui", "Tous les noms suivis du mot ssi qui"),  // bench case
+        ("<unk> bonjour", "bonjour"),
+        ("bonjour <unk>", "bonjour"),
+        ("<unk>", ""),
+        ("C'est<unk> fini", "C'est fini"),
+        ("Il a cité <unk>, puis il est parti.", "Il a cité, puis il est parti."),
+        ("Le mot <unk>.", "Le mot."),
+        ("Tu connais <unk>?", "Tu connais?"),
+        ("Tu connais <unk> ?", "Tu connais ?"),  // a mark the model wrote apart stays apart
+        ("Deux  espaces <unk> ici", "Deux espaces ici"),
+        ("Le  rendez-vous est à 16 h 30.", "Le  rendez-vous est à 16 h 30."),  // no marker: byte for byte
+        ("Les balises <b> et <UNK> restent.", "Les balises <b> et <UNK> restent."),  // exact, case-sensitive
+        ("Il a dit « <unk> » hier", "Il a dit « » hier"),  // accepted: the quotes stay
+        ("Il a <unk><unk> dit", "Il a dit"),
+        ("Il a <unk> <unk> dit", "Il a dit"),
+    ])
+    func markersLeaveTheText(raw: String, expected: String) {
+        #expect(SpeechEngine.removingUnknownTokens(raw) == expected)
+    }
+
+    private static func w(_ text: String, _ start: Double, _ end: Double) -> Word {
+        Word(text: text, start: start, end: end)
+    }
+
+    static let wordRows: [([Word], [Word])] = [
+        ([w("mot", 0, 1), w("<unk>ssi<unk>", 1, 2), w("<unk>", 2, 3), w("qui", 3, 4)],
+         [w("mot", 0, 1), w("ssi", 1, 2), w("qui", 3, 4)]),
+        // The previous word keeps its own end: LiveTranscriber and diarization use its midpoint.
+        ([w("cité", 0, 1), w("<unk>,", 1, 2), w("puis", 2, 3)], [w("cité,", 0, 1), w("puis", 2, 3)]),
+        ([w("connais", 0, 1), w("<unk>?", 1, 2)], [w("connais?", 0, 1)]),
+        // No previous word: kept, like an isolated mark today.
+        ([w("<unk>,", 0, 1), w("bonjour", 1, 2)], [w(",", 0, 1), w("bonjour", 1, 2)]),
+        // A mark the model wrote as its own word is left to `words(from:)`.
+        ([w("quoi", 0, 1), w("?", 1, 2)], [w("quoi", 0, 1), w("?", 1, 2)]),
+        ([w("<unk>", 0, 1)], []),  // a meeting channel that heard only a marker has no words
+        ([], []),
+    ]
+
+    @Test(arguments: wordRows) func markersLeaveTheWords(words: [Word], expected: [Word]) {
+        #expect(SpeechEngine.removingUnknownTokens(words) == expected)
+    }
+
+    /// Token pieces as FluidAudio gives them ("▁" opens a word), one second each.
+    private static func tokens(_ pieces: [String]) -> [TokenTiming] {
+        pieces.enumerated().map {
+            TokenTiming(token: $1, tokenId: 0, startTime: Double($0), endTime: Double($0 + 1), confidence: 1)
+        }
+    }
+
+    @Test func markersLeaveTheWordsFromTokens() {
+        let bench = SpeechEngine.words(from: Self.tokens(["▁mot", "▁", "<unk>", "ssi", "<unk>", "▁", "<unk>", "▁qui"]))
+        #expect(bench.map(\.text) == ["mot", "ssi", "qui"])
+
+        let apart = SpeechEngine.words(from: Self.tokens(["▁cité", "▁", "<unk>", ",", "▁puis"]))
+        #expect(apart.map(\.text) == ["cité,", "puis"])
+        #expect(apart.first?.end == 1)  // "cité" keeps its own end
+
+        let inside = SpeechEngine.words(from: Self.tokens(["▁cité", "<unk>", ",", "▁puis"]))
+        #expect(inside.map(\.text) == ["cité,", "puis"])
+        #expect(inside.first?.end == 3)  // not punctuation-only: "cité<unk>," keeps its own span
+    }
+
+    /// `text` and the joined `words` follow one rule, so they agree. Each text is the same pieces
+    /// joined with "▁" read as a space; the first adds a double space FluidAudio would not
+    /// produce, to check that it collapses.
+    @Test(arguments: [
+        (["▁mot", "▁", "<unk>", "ssi", "<unk>", "▁", "<unk>", "▁qui"], "mot  <unk>ssi<unk> <unk> qui"),
+        (["▁cité", "▁", "<unk>", ",", "▁puis"], "cité <unk>, puis"),
+        (["▁connais", "▁", "<unk>", "▁?"], "connais <unk> ?"),
+    ])
+    func textAndWordsAgree(pieces: [String], text: String) {
+        let words = SpeechEngine.words(from: Self.tokens(pieces)).map(\.text).joined(separator: " ")
+        #expect(SpeechEngine.removingUnknownTokens(text) == words)
     }
 }
