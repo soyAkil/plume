@@ -505,21 +505,27 @@ final class ChannelRecorder: @unchecked Sendable {
         return firstSampleOffset ?? 0
     }
 
-    /// Attaches the backup file, first pouring in everything captured so far.
+    /// Attaches the backup file, first pouring in everything captured so far. A known offset
+    /// is set before the pour: a pour over 5 s rewrites the header, and a header that counts
+    /// samples must already carry their offset, or a crash recovery would place them at 0.
     func attach(_ writer: WavWriter) {
         lock.lock()
         defer { lock.unlock() }
+        if let firstSampleOffset { writer.setOffset(firstSampleOffset) }
         let captured = buffer.all()
         if !captured.isEmpty { writer.append(captured) }
         self.writer = writer
     }
 
-    func append(_ samples: [Float]) {
+    /// `elapsed` (seconds since the session start) replaces the clock: tests only.
+    func append(_ samples: [Float], elapsed: TimeInterval? = nil) {
         let rate = Double(SpeechEngine.sampleRate)
-        let now = Date().timeIntervalSince(sessionStart)
+        let now = elapsed ?? Date().timeIntervalSince(sessionStart)
         lock.lock()
         if firstSampleOffset == nil {
-            firstSampleOffset = max(0, now - Double(samples.count) / rate)
+            let first = max(0, now - Double(samples.count) / rate)
+            firstSampleOffset = first
+            writer?.setOffset(first)
         }
         let start = firstSampleOffset ?? 0
 
@@ -532,7 +538,9 @@ final class ChannelRecorder: @unchecked Sendable {
             // sleep), shift the origin rather than fabricate hours of zeros.
             let padded = min(missing, Int(rate) * 30)
             if padded < missing {
-                firstSampleOffset = start + Double(missing - padded) / rate
+                let shifted = start + Double(missing - padded) / rate
+                firstSampleOffset = shifted
+                writer?.setOffset(shifted)
             }
             let silence = [Float](repeating: 0, count: padded)
             buffer.append(silence)

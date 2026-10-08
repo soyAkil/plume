@@ -13,6 +13,20 @@ public struct ChannelAudio: Sendable {
     }
 
     public var duration: Double { offset + Double(samples.count) / Double(SpeechEngine.sampleRate) }
+
+    /// The samples preceded by `offset` seconds of silence: a file read at offset 0 stays on
+    /// the session timeline.
+    public var paddedSamples: [Float] {
+        [Float](repeating: 0, count: Int(offset * Double(SpeechEngine.sampleRate))) + samples
+    }
+
+    /// The channels a meeting keeps as files: silent ones skipped, with their file label.
+    /// Silence is judged on the samples, not the padded array: the lead is silent anyway, and
+    /// building it just to test would cost memory. Nothing is padded here: each caller pads one
+    /// channel at a time, so one padded array is in memory at once.
+    public static func tracksToKeep(_ channels: [ChannelAudio]) -> [(label: String, audio: ChannelAudio)] {
+        channels.filter { !AudioLevel.isSilent($0.samples) }.map { ($0.channel == .mic ? "mic" : "sys", $0) }
+    }
 }
 
 public struct ConversationResult: Sendable {

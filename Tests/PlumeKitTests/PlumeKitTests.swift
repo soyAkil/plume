@@ -387,6 +387,240 @@ struct RecoveryTests {
     }
 }
 
+/// Meeting WAVs carry their channel's offset in a `plmo` chunk, so a recovered meeting keeps its
+/// two channels in time. Headers are literal bytes: they pin both layouts, the 1.0.1 one and
+/// the meeting one, in place of a fixture file.
+@Suite("Meeting WAV offset")
+struct WavOffsetTests {
+    /// `RIFF` and `WAVE` around a given RIFF size (little-endian).
+    static func riff(_ size: [UInt8]) -> [UInt8] { Array("RIFF".utf8) + size + Array("WAVE".utf8) }
+    /// The `fmt ` chunk of a 16 kHz mono 16-bit WAV, as `WavWriter` writes it.
+    static let fmt: [UInt8] =
+        Array("fmt ".utf8) + [0x10, 0, 0, 0, 0x01, 0, 0x01, 0, 0x80, 0x3E, 0, 0, 0x00, 0x7D, 0, 0, 0x02, 0, 0x10, 0]
+    /// A `data` chunk header counting 0 bytes.
+    static let data0: [UInt8] = Array("data".utf8) + [0, 0, 0, 0]
+    /// `plmo`, size 8, then a Float64 (little-endian).
+    static func plmo(_ value: [UInt8]) -> [UInt8] { Array("plmo".utf8) + [8, 0, 0, 0] + value }
+    static let v42_5: [UInt8] = [0, 0, 0, 0, 0, 0x40, 0x45, 0x40]
+    static let vMinus1: [UInt8] = [0, 0, 0, 0, 0, 0, 0xF0, 0xBF]
+    static let vNaN: [UInt8] = [0, 0, 0, 0, 0, 0, 0xF8, 0x7F]
+    static let vInfinity: [UInt8] = [0, 0, 0, 0, 0, 0, 0xF0, 0x7F]
+    /// A Float64's little-endian bytes.
+    static func bytes(_ value: Double) -> [UInt8] { withUnsafeBytes(of: value.bitPattern.littleEndian) { Array($0) } }
+
+    @Test(arguments: [
+        ("1.0.1 header, 44 bytes", riff([36, 0, 0, 0]) + fmt + data0, nil),
+        ("meeting header, 42.5 s", riff([52, 0, 0, 0]) + fmt + plmo(v42_5) + data0, 42.5),
+        ("offset not known yet", riff([52, 0, 0, 0]) + fmt + plmo(vMinus1) + data0, nil),
+        ("NaN", riff([52, 0, 0, 0]) + fmt + plmo(vNaN) + data0, nil),
+        ("infinity", riff([52, 0, 0, 0]) + fmt + plmo(vInfinity) + data0, nil),
+        ("corrupt 1e300", riff([52, 0, 0, 0]) + fmt + plmo(bytes(1e300)) + data0, nil),
+        ("just over a day", riff([52, 0, 0, 0]) + fmt + plmo(bytes(86_400.001)) + data0, nil),
+        ("exactly a day", riff([52, 0, 0, 0]) + fmt + plmo(bytes(86_400)) + data0, 86_400),
+        ("plmo of size 4", riff([48, 0, 0, 0]) + fmt + Array("plmo".utf8) + [4, 0, 0, 0, 0, 0, 0x2A, 0x42] + data0, nil),
+        ("cut inside plmo", riff([52, 0, 0, 0]) + fmt + Array("plmo".utf8) + [8, 0, 0, 0, 0, 0, 0, 0], nil),
+        ("odd-sized LIST before plmo",
+            riff([64, 0, 0, 0]) + fmt + Array("LIST".utf8) + [3, 0, 0, 0, 0x61, 0x62, 0x63, 0] + plmo(v42_5) + data0,
+            42.5),
+        ("plmo after data", riff([52, 0, 0, 0]) + fmt + data0 + plmo(v42_5), nil),
+        ("not RIFF", Array("RIFX".utf8) + [52, 0, 0, 0] + Array("WAVE".utf8) + fmt + plmo(v42_5) + data0, nil),
+        ("chunk size 0xFFFFFFFF before plmo",
+            riff([52, 0, 0, 0]) + fmt + Array("LIST".utf8) + [0xFF, 0xFF, 0xFF, 0xFF] + plmo(v42_5) + data0, nil),
+        ("not WAVE", Array("RIFF".utf8) + [52, 0, 0, 0] + Array("AVI ".utf8) + fmt + plmo(v42_5) + data0, nil),
+    ] as [(String, [UInt8], Double?)])
+    func readsTheRecordedOffset(_ name: String, header: [UInt8], expected: Double?) {
+        #expect(WavWriter.recordedOffset(header: Data(header)) == expected, "\(name)")
+    }
+
+    /// A missing file, an empty one (crash before the header) or a cut header: nil, no crash.
+    @Test func unreadableFilesHaveNoOffset() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let empty = root.appendingPathComponent("empty_mic.wav")
+        let cut = root.appendingPathComponent("cut_mic.wav")
+        try Data().write(to: empty)
+        try Data(Array("RIFF".utf8) + [52, 0]).write(to: cut)
+        #expect(WavWriter.recordedOffset(of: root.appendingPathComponent("missing_mic.wav")) == nil)
+        #expect(WavWriter.recordedOffset(of: empty) == nil)
+        #expect(WavWriter.recordedOffset(of: cut) == nil)
+    }
+}
+
+/// What `WavWriter` writes: the 1.0.1 bytes by default, the `plmo` chunk for a meeting.
+@Suite("Meeting WAV writer")
+struct WavWriterOffsetTests {
+    /// One second of a 440 Hz A, loud enough not to pass for silence.
+    let tone = (0..<16_000).map { Float(sin(Double($0) * 2 * .pi * 440 / 16_000)) * 0.3 }
+
+    static func makeFolder() throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plume-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    /// The first `count` bytes of a file, read while the writer may still be open.
+    static func head(_ url: URL, _ count: Int) throws -> [UInt8] {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return [UInt8](try handle.read(upToCount: count) ?? Data())
+    }
+
+    @Test func defaultWriterKeepsThe101Header() throws {
+        let root = try Self.makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("2026-10-08_10-00-00_dictation.wav")
+        let writer = try WavWriter(url: url)
+        writer.setOffset(2)  // ignored: not a meeting WAV
+        writer.append([Float](repeating: 0, count: 1_600))
+        writer.close()
+        let expected: [UInt8] =
+            Array("RIFF".utf8) + [0xA4, 0x0C, 0, 0] + Array("WAVE".utf8)  // 36 + 3,200
+            + Array("fmt ".utf8) + [0x10, 0, 0, 0, 0x01, 0, 0x01, 0, 0x80, 0x3E, 0, 0, 0x00, 0x7D, 0, 0, 0x02, 0, 0x10, 0]
+            + Array("data".utf8) + [0x80, 0x0C, 0, 0]  // 3,200 bytes
+        let head = try Self.head(url, 44)
+        #expect(head == expected)
+        #expect(WavWriter.recordedOffset(of: url) == nil)
+        let count = try AudioIO.loadSamples(url).count
+        #expect(count == 1_600)
+    }
+
+    @Test func meetingWriterRecordsTheLatestOffset() throws {
+        let root = try Self.makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("2026-10-08_10-00-00_mic.wav")
+        let writer = try WavWriter(url: url, recordsOffset: true)
+        writer.setOffset(1.5)
+        writer.append(tone)
+        writer.setOffset(3.25)
+        writer.close()
+        #expect(WavWriter.recordedOffset(of: url) == 3.25)
+        let bytes = try Self.head(url, 60)
+        let riffSize: [UInt8] = [0x34, 0x7D, 0, 0]  // 52 + 32,000
+        #expect(Array(bytes[4..<8]) == riffSize)
+        let chunks: [UInt8] =
+            Array("plmo".utf8) + [8, 0, 0, 0] + [0, 0, 0, 0, 0, 0, 0x0A, 0x40]  // 3.25
+            + Array("data".utf8) + [0x00, 0x7D, 0, 0]  // 32,000 bytes
+        #expect(Array(bytes[36..<60]) == chunks)
+        // Read back the way 1.0.1 reads it: the unknown chunk is skipped.
+        let samples = try AudioIO.loadSamples(url)
+        #expect(samples.count == 16_000)
+        #expect(zip(samples, tone).allSatisfy { abs($0 - $1) <= 2.0 / 32_768 })
+    }
+
+    /// After a crash, readers see what the last header counted. A header that counts samples
+    /// must carry the offset, before `close` rewrites it.
+    @Test func aCountedHeaderCarriesTheOffsetBeforeClose() throws {
+        let root = try Self.makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("2026-10-08_10-00-00_sys.wav")
+        let writer = try WavWriter(url: url, recordsOffset: true)
+        defer { writer.close() }
+        writer.setOffset(2.5)
+        // 160,002 bytes: just over the 160,000 that trigger a periodic header rewrite.
+        writer.append([Float](repeating: 0.1, count: 80_001))
+        writer.flush()
+        let bytes = try Self.head(url, 60)
+        let dataBytes: [UInt8] = [0x02, 0x71, 0x02, 0]  // 160,002
+        #expect(Array(bytes[56..<60]) == dataBytes)
+        #expect(WavWriter.recordedOffset(header: Data(bytes)) == 2.5)
+    }
+
+    /// A meeting WAV left by 1.0.1 (no `plmo` chunk, as `Recovery.stash` still writes) is
+    /// recovered at offset 0, as before.
+    @Test func a101MeetingWavHasNoOffset() throws {
+        let root = try Self.makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("2026-10-08_10-00-00_mic.wav")
+        Recovery.stash(tone, at: url)
+        #expect(WavWriter.recordedOffset(of: url) == nil)
+    }
+
+    /// A last offset after `close` (a late tap after stop) leaves the file alone.
+    @Test func anOffsetAfterCloseIsIgnored() throws {
+        let root = try Self.makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("2026-10-08_10-00-00_sys.wav")
+        let writer = try WavWriter(url: url, recordsOffset: true)
+        writer.setOffset(1.5)
+        writer.append(tone)
+        writer.close()
+        let before = try Data(contentsOf: url)
+        writer.setOffset(9)
+        writer.flush()
+        #expect(try Data(contentsOf: url) == before)
+        #expect(WavWriter.recordedOffset(of: url) == 1.5)
+    }
+}
+
+/// A meeting's kept `.m4a` files start with the channel's offset in silence, so reprocessing,
+/// which reads them at offset 0, stays on the session timeline. Shared by the live meeting and
+/// recovery.
+@Suite("Kept meeting audio")
+struct KeptAudioTests {
+    /// A 440 Hz A, loud enough not to pass for silence.
+    static func tone(_ count: Int) -> [Float] {
+        (0..<count).map { Float(sin(Double($0) * 2 * .pi * 440 / 16_000)) * 0.3 }
+    }
+
+    @Test func micAtZeroKeepsItsSamples() {
+        let tracks = ChannelAudio.tracksToKeep([ChannelAudio(channel: .mic, samples: Self.tone(1_600))])
+        #expect(tracks.map(\.label) == ["mic"])
+        #expect(tracks[0].audio.paddedSamples == Self.tone(1_600))
+    }
+
+    @Test func systemIsPaddedByItsOffset() {
+        let tracks = ChannelAudio.tracksToKeep([ChannelAudio(channel: .system, samples: Self.tone(1_600), offset: 0.5)])
+        #expect(tracks.map(\.label) == ["sys"])
+        #expect(tracks[0].audio.paddedSamples == [Float](repeating: 0, count: 8_000) + Self.tone(1_600))
+    }
+
+    /// A late switch: ten minutes of lead. The channel is kept and padded in full.
+    @Test func aLongLeadDoesNotMakeAChannelSilent() {
+        let tracks = ChannelAudio.tracksToKeep([ChannelAudio(channel: .system, samples: Self.tone(16_000), offset: 600)])
+        #expect(tracks.map(\.label) == ["sys"])
+        #expect(tracks[0].audio.paddedSamples.count == 9_616_000)
+    }
+
+    @Test func silentChannelsAreSkippedMicFirst() {
+        let silence = [Float](repeating: 0, count: 1_600)
+        let tone = Self.tone(1_600)
+        func labels(_ mic: [Float], _ system: [Float]) -> [String] {
+            ChannelAudio.tracksToKeep([
+                ChannelAudio(channel: .mic, samples: mic), ChannelAudio(channel: .system, samples: system, offset: 0.2),
+            ]).map(\.label)
+        }
+        #expect(labels(tone, silence) == ["mic"])
+        #expect(labels(silence, tone) == ["sys"])
+        #expect(labels(tone, tone) == ["mic", "sys"])
+        #expect(labels(silence, silence).isEmpty)
+    }
+}
+
+/// A recovered meeting gets the offsets its WAVs recorded, as the live session would have used.
+@Suite("Recovered meeting channels")
+struct RecoveredChannelsTests {
+    @Test(arguments: [
+        // 1.0.1 files: no recorded offset, so 0 as before.
+        (nil, 16_000, (nil, 16_000), [0, 0], 1.0),
+        (0.12, 16_000, (0.31, 16_000), [0.12, 0.31], 1.31),
+        // Dictation switched to a meeting ten minutes in: the system channel starts there.
+        (0.05, 160_000, (600.0, 32_000), [0.05, 600.0], 602.0),
+        // No system channel.
+        (0.2, 16_000, nil, [0.2], 1.2),
+    ] as [(Double?, Int, (Double?, Int)?, [Double], Double)])
+    func channelsKeepTheirOffsets(
+        micOffset: Double?, micCount: Int, system: (Double?, Int)?, offsets: [Double], maxDuration: Double
+    ) {
+        let channels = Recovery.meetingChannels(
+            mic: ([Float](repeating: 0, count: micCount), micOffset),
+            system: system.map { ([Float](repeating: 0, count: $0.1), $0.0) })
+        #expect(channels.map(\.channel) == (system == nil ? [.mic] : [.mic, .system]))
+        #expect(channels.map(\.offset) == offsets)
+        #expect(abs((channels.map(\.duration).max() ?? 0) - maxDuration) < 1e-9)
+    }
+}
+
 @Suite("Cancelled recordings")
 struct CancelledTests {
     /// One second of a 440 Hz A, loud enough not to pass for silence.

@@ -69,6 +69,18 @@ public enum Recovery {
         return found
     }
 
+    /// A recovered meeting's channels, mic first, each at the offset its WAV recorded (0 for a
+    /// 1.0.1 file). Both offsets count from the session start, as live, so none is subtracted.
+    static func meetingChannels(
+        mic: (samples: [Float], offset: Double?), system: (samples: [Float], offset: Double?)?
+    ) -> [ChannelAudio] {
+        var channels = [ChannelAudio(channel: .mic, samples: mic.samples, offset: mic.offset ?? 0)]
+        if let system {
+            channels.append(ChannelAudio(channel: .system, samples: system.samples, offset: system.offset ?? 0))
+        }
+        return channels
+    }
+
     /// Transcribes an interrupted recording and files it in the library.
     /// The recovery files are deleted once the transcript is written.
     public static func recover(
@@ -83,7 +95,7 @@ public enum Recovery {
         let micSamples = try AudioIO.loadSamples(pending.mic)
         let date = TranscriptStore.date(fromID: pending.id) ?? Date()
         var transcript: Transcript
-        var audio: [(String, [Float])] = [("mic", micSamples)]
+        var kept = [ChannelAudio(channel: .mic, samples: micSamples)]
 
         if pending.mode == .dictation {
             let result = try await Pipeline.dictation(
@@ -97,11 +109,13 @@ public enum Recovery {
                 duration: Double(micSamples.count) / Double(SpeechEngine.sampleRate),
                 engine: await engine.modelName, text: result.text, rawText: result.raw)
         } else {
-            var channels = [ChannelAudio(channel: .mic, samples: micSamples)]
-            if let system = pending.system, let samples = try? AudioIO.loadSamples(system) {
-                channels.append(ChannelAudio(channel: .system, samples: samples))
-                audio.append(("sys", samples))
+            var system: (samples: [Float], offset: Double?)?
+            if let url = pending.system, let samples = try? AudioIO.loadSamples(url) {
+                system = (samples, WavWriter.recordedOffset(of: url))
             }
+            let channels = meetingChannels(
+                mic: (micSamples, WavWriter.recordedOffset(of: pending.mic)), system: system)
+            kept = channels
             let result = try await Pipeline.conversation(
                 channels: channels, engine: engine, voiceprint: VoiceprintStore.load(), ownerOnMic: true)
             guard !result.segments.isEmpty else {
@@ -116,9 +130,9 @@ public enum Recovery {
 
         if settings.keepAudio {
             let directory = try store.ensureDirectory(forID: pending.id)
-            for (label, samples) in audio where !AudioLevel.isSilent(samples) {
+            for (label, audio) in ChannelAudio.tracksToKeep(kept) {
                 let name = "\(pending.id)_\(label).m4a"
-                if (try? AudioIO.writeM4A(samples, to: directory.appendingPathComponent(name))) != nil {
+                if (try? AudioIO.writeM4A(audio.paddedSamples, to: directory.appendingPathComponent(name))) != nil {
                     transcript.audioFiles.append(name)
                 }
             }

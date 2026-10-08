@@ -246,7 +246,7 @@ final class SessionController: ObservableObject {
             let url = mode == .meeting
                 ? directory.appendingPathComponent("\(id)_mic.wav")
                 : (try? Recovery.dictationURL(id: id, store: store)) ?? directory.appendingPathComponent(id + Recovery.dictationSuffix)
-            if let writer = try? WavWriter(url: url) { micRecorder.attach(writer) }
+            if let writer = try? WavWriter(url: url, recordsOffset: mode == .meeting) { micRecorder.attach(writer) }
         }
         micRecorder.onLevel = { [weak self] level in
             DispatchQueue.main.async { self?.pushLevel(level) }
@@ -347,7 +347,9 @@ final class SessionController: ObservableObject {
     private func startSystemCapture(id: String, directory: URL?, sessionStart: Date) {
         guard settings.systemAudioInMeeting, system == nil else { return }
         let recorder = ChannelRecorder(channel: .system, sessionStart: sessionStart)
-        if let directory, let writer = try? WavWriter(url: directory.appendingPathComponent("\(id)_sys.wav")) {
+        if let directory,
+            let writer = try? WavWriter(url: directory.appendingPathComponent("\(id)_sys.wav"), recordsOffset: true)
+        {
             recorder.attach(writer)
         }
         recorder.onLevel = { [weak self] level in
@@ -399,7 +401,10 @@ final class SessionController: ObservableObject {
                 micChannel.writer?.close()
                 try? FileManager.default.removeItem(at: old)
             }
-            if let directory, let writer = try? WavWriter(url: directory.appendingPathComponent("\(sessionID)_mic.wav")) {
+            if let directory,
+                let writer = try? WavWriter(
+                    url: directory.appendingPathComponent("\(sessionID)_mic.wav"), recordsOffset: true)
+            {
                 micChannel.attach(writer)
             }
             startSystemCapture(id: sessionID, directory: directory, sessionStart: startedAt)
@@ -956,11 +961,9 @@ final class SessionController: ObservableObject {
                 var transcript = draft
                 let store = settings.store
                 if settings.keepAudio, let directory = try? store.ensureDirectory(forID: id) {
-                    for audio in recorded where !AudioLevel.isSilent(audio.samples) {
-                        let name = "\(id)_\(audio.channel == .mic ? "mic" : "sys").m4a"
-                        // Initial silence equal to the channel's offset: the audio stays aligned with the timestamps.
-                        let lead = [Float](repeating: 0, count: Int(audio.offset * Double(SpeechEngine.sampleRate)))
-                        if (try? AudioIO.writeM4A(lead + audio.samples, to: directory.appendingPathComponent(name))) != nil {
+                    for (label, audio) in ChannelAudio.tracksToKeep(recorded) {
+                        let name = "\(id)_\(label).m4a"
+                        if (try? AudioIO.writeM4A(audio.paddedSamples, to: directory.appendingPathComponent(name))) != nil {
                             transcript.audioFiles.append(name)
                         }
                     }
