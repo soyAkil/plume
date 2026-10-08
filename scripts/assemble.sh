@@ -25,3 +25,9 @@ cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp -R Resources/Sounds "$APP/Contents/Resources/Sounds"
 # Sparkle (updates): the library and its installer tools.
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+# llama.cpp (local summaries). The release ships x86_64 too: keep Apple Silicon only, half the size.
+LLAMA="$APP/Contents/Frameworks/llama.framework"
+ditto "$BIN/llama.framework" "$LLAMA"
+LLAMA_BIN="$LLAMA/Versions/A/llama"
+lipo -thin arm64 "$LLAMA_BIN" -output "$LLAMA_BIN.arm64"
+mv "$LLAMA_BIN.arm64" "$LLAMA_BIN"

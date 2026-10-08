@@ -51,6 +51,8 @@ License: Apache 2.0 — https://www.apache.org/licenses/LICENSE-2.0
 - **FluidAudio**, © Fluid Inference — Apache 2.0 — https://github.com/FluidInference/FluidAudio
 - **Sparkle** (updates), © Sparkle Project and Andy Matuschak — MIT license —
   https://github.com/sparkle-project/Sparkle
+- **llama.cpp** (local summaries), © The ggml authors — MIT license —
+  https://github.com/ggml-org/llama.cpp
 
 ## Fonts
 

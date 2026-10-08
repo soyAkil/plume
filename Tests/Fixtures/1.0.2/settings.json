@@ -10,6 +10,7 @@
     "muteWhileDictating" : true,
     "pasteAfterDictation" : true,
     "polish" : true,
+    "readAloudShowText" : true,
     "restoreClipboard" : true,
     "smartInsert" : true,
     "sounds" : true,
@@ -21,6 +22,7 @@
   "numbers" : {
     "audioRetentionDays" : 30,
     "cancelledRetentionHours" : 48,
+    "readAloudSpeed" : 1.25,
     "soundVolume" : 0.5
   },
   "replacements" : [
@@ -87,9 +89,17 @@
       "keyCode" : 9,
       "modifiers" : 3
     },
+    "readAloudShortcut" : {
+      "keyCode" : 15,
+      "modifiers" : 5
+    },
     "restoreShortcut" : {
       "keyCode" : 15,
       "modifiers" : 3
+    },
+    "summarizeAloudShortcut" : {
+      "keyCode" : 1,
+      "modifiers" : 5
     },
     "transformShortcut" : {
       "keyCode" : 17,
@@ -101,6 +111,10 @@
     "language" : "fr",
     "model" : "parakeet-ultra",
     "polishInstructions" : "Phrases courtes.",
+    "readAloudKeepLoaded" : "always",
+    "readAloudLanguage" : "fr",
+    "readAloudLength" : "detailed",
+    "readAloudVoice" : "supertonic3-m2",
     "soundPack" : "pluck"
   },
   "version" : 1

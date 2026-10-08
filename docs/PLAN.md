@@ -35,6 +35,8 @@ interface.
 | Pause | The microphone really closes (orange light off), the missing silence is filled in on resume | Requested for two years at Superwhisper (196 votes) without being delivered. |
 | Sound muted while dictating | Mute setting of the default output (Core Audio), not MediaRemote | MediaRemote is private and broken since macOS 15.4; the mute is restored without remembering anything. |
 | Insertion | Reading the active field through accessibility (`AXSelectedTextRange`, `AXStringForRange`) | Native apps expose it; web or Electron apps often don't, so Plume pastes as is. |
+| Read aloud: summary | llama.cpp (official XCFramework, in process), GGUF models chosen and downloaded by the user (Qwen3.5-4B, Gemma 4 E2B) | Builds without Xcode and runs on every platform a port could target; MLX reads prompts ~30% faster but needs Xcode and only runs on Apple hardware. |
+| Read aloud: voice | Supertonic-3 (FluidAudio), F1 or M2, numbers spelled out by NeMo's normalizer first, speed applied by a pitch-preserving time-stretch | Picked by ear among four engines at 1.5×; ~90× real time; one 162 MB model for 31 languages. |
 
 ## Roadmap
 

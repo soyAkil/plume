@@ -34,8 +34,9 @@ public final class PlumeSettings: @unchecked Sendable {
 
     public let defaults: UserDefaults
 
-    public init() {
+    public convenience init() {
         // PLUME_DEFAULTS: a separate set of settings for test runs, without touching the real ones.
+        let defaults: UserDefaults
         if let suite = ProcessInfo.processInfo.environment["PLUME_DEFAULTS"], !suite.isEmpty {
             defaults = UserDefaults(suiteName: Self.bundleID + "." + suite) ?? .standard
         } else if Bundle.main.bundleIdentifier == Self.bundleID {
@@ -43,6 +44,12 @@ public final class PlumeSettings: @unchecked Sendable {
         } else {
             defaults = UserDefaults(suiteName: Self.bundleID) ?? .standard
         }
+        self.init(defaults: defaults)
+    }
+
+    /// Settings on a given suite: tests pass a throwaway one.
+    public init(defaults: UserDefaults) {
+        self.defaults = defaults
         defaults.register(defaults: [
             Key.liveTranscript: false,
             Key.pasteAfterDictation: true,
@@ -66,6 +73,11 @@ public final class PlumeSettings: @unchecked Sendable {
             Key.soundVolume: 0.7,
             Key.soundPack: "pluck",
             Key.modeSwitchAtStart: false,
+            Key.readAloudLength: SummaryLength.automatic.rawValue,
+            Key.readAloudLanguage: SummaryLanguage.sameAsText.rawValue,
+            Key.readAloudVoice: "supertonic3-f1",
+            Key.readAloudSpeed: ReadAloudSpeed.defaultValue,
+            Key.readAloudShowText: false,
         ])
     }
 
@@ -106,6 +118,16 @@ public final class PlumeSettings: @unchecked Sendable {
         static let meetingShortcut = "meetingShortcut"
         static let onboarded = "onboarded"
         static let changelogSeen = "changelogSeen"
+        static let readAloudEngine = "readAloudEngine"
+        static let readAloudPendingDownload = "readAloudPendingDownload"
+        static let readAloudKeepLoaded = "readAloudKeepLoaded"
+        static let readAloudShortcut = "readAloudShortcut"
+        static let summarizeAloudShortcut = "summarizeAloudShortcut"
+        static let readAloudLength = "readAloudLength"
+        static let readAloudLanguage = "readAloudLanguage"
+        static let readAloudVoice = "readAloudVoice"
+        static let readAloudSpeed = "readAloudSpeed"
+        static let readAloudShowText = "readAloudShowText"
     }
 
     // MARK: Folders
@@ -393,6 +415,70 @@ public final class PlumeSettings: @unchecked Sendable {
     public var restoreShortcut: Shortcut {
         get { shortcut(forKey: Key.restoreShortcut) ?? .none }
         set { setShortcut(newValue, forKey: Key.restoreShortcut) }
+    }
+
+    // MARK: Read aloud
+
+    /// Summary engine in use (catalog id); empty when none is chosen. Not in backups: the
+    /// model files are not on a restored Mac.
+    public var readAloudEngine: String {
+        get { defaults.string(forKey: Key.readAloudEngine) ?? "" }
+        set { defaults.set(newValue, forKey: Key.readAloudEngine) }
+    }
+
+    /// Download started from the app and not finished (`voice` or an engine id), resumed at launch.
+    public var readAloudPendingDownload: String {
+        get { defaults.string(forKey: Key.readAloudPendingDownload) ?? "" }
+        set { defaults.set(newValue, forKey: Key.readAloudPendingDownload) }
+    }
+
+    /// `nil` until the user chooses; the default then depends on the Mac's memory
+    /// (`KeepLoaded.defaultFor`). No registered default, so a backup carries only a real choice.
+    public var readAloudKeepLoaded: KeepLoaded? {
+        get { defaults.string(forKey: Key.readAloudKeepLoaded).flatMap(KeepLoaded.init(rawValue:)) }
+        set {
+            if let newValue { defaults.set(newValue.rawValue, forKey: Key.readAloudKeepLoaded) } else {
+                defaults.removeObject(forKey: Key.readAloudKeepLoaded)
+            }
+        }
+    }
+
+    public var readAloudLength: SummaryLength {
+        get { SummaryLength(rawValue: defaults.string(forKey: Key.readAloudLength) ?? "") ?? .automatic }
+        set { defaults.set(newValue.rawValue, forKey: Key.readAloudLength) }
+    }
+
+    public var readAloudLanguage: SummaryLanguage {
+        get { SummaryLanguage(rawValue: defaults.string(forKey: Key.readAloudLanguage) ?? "") ?? .sameAsText }
+        set { defaults.set(newValue.rawValue, forKey: Key.readAloudLanguage) }
+    }
+
+    /// Voice id (`VoiceCatalog`); an unknown id falls back to the default voice there.
+    public var readAloudVoice: String {
+        get { defaults.string(forKey: Key.readAloudVoice) ?? "supertonic3-f1" }
+        set { defaults.set(newValue, forKey: Key.readAloudVoice) }
+    }
+
+    public var readAloudSpeed: Double {
+        get { ReadAloudSpeed.clamped(defaults.double(forKey: Key.readAloudSpeed)) }
+        set { defaults.set(ReadAloudSpeed.clamped(newValue), forKey: Key.readAloudSpeed) }
+    }
+
+    public var readAloudShowText: Bool {
+        get { defaults.bool(forKey: Key.readAloudShowText) }
+        set { defaults.set(newValue, forKey: Key.readAloudShowText) }
+    }
+
+    /// "Read aloud" (word for word) shortcut, none by default.
+    public var readAloudShortcut: Shortcut {
+        get { shortcut(forKey: Key.readAloudShortcut) ?? .none }
+        set { setShortcut(newValue, forKey: Key.readAloudShortcut) }
+    }
+
+    /// "Summarize aloud" shortcut, none by default.
+    public var summarizeAloudShortcut: Shortcut {
+        get { shortcut(forKey: Key.summarizeAloudShortcut) ?? .none }
+        set { setShortcut(newValue, forKey: Key.summarizeAloudShortcut) }
     }
 
     private func shortcut(forKey key: String) -> Shortcut? {

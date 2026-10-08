@@ -22,19 +22,21 @@ public enum SettingsBackup {
         PlumeSettings.Key.keepHistory, PlumeSettings.Key.streamingPaste,
         PlumeSettings.Key.sounds, PlumeSettings.Key.systemAudioInMeeting, PlumeSettings.Key.meetingDetection,
         PlumeSettings.Key.muteWhileDictating, PlumeSettings.Key.polish, PlumeSettings.Key.autoSummary,
-        PlumeSettings.Key.modeSwitchAtStart,
+        PlumeSettings.Key.modeSwitchAtStart, PlumeSettings.Key.readAloudShowText,
     ]
     static let numberKeys = [
         PlumeSettings.Key.soundVolume, PlumeSettings.Key.audioRetentionDays, PlumeSettings.Key.cancelledRetentionHours,
+        PlumeSettings.Key.readAloudSpeed,
     ]
     static let stringKeys = [
         PlumeSettings.Key.model, PlumeSettings.Key.soundPack, PlumeSettings.Key.appearance, PlumeSettings.Key.polishInstructions,
-        PlumeSettings.Key.language,
+        PlumeSettings.Key.language, PlumeSettings.Key.readAloudKeepLoaded, PlumeSettings.Key.readAloudLength,
+        PlumeSettings.Key.readAloudLanguage, PlumeSettings.Key.readAloudVoice,
     ]
     static let shortcutKeys = [
         PlumeSettings.Key.dictationShortcut, PlumeSettings.Key.meetingShortcut, PlumeSettings.Key.openShortcut,
         PlumeSettings.Key.pasteLastShortcut, PlumeSettings.Key.transformShortcut, PlumeSettings.Key.cancelShortcut,
-        PlumeSettings.Key.restoreShortcut,
+        PlumeSettings.Key.restoreShortcut, PlumeSettings.Key.readAloudShortcut, PlumeSettings.Key.summarizeAloudShortcut,
     ]
 
     public static func snapshot(settings: PlumeSettings = .shared) -> File {

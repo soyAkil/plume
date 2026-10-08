@@ -60,6 +60,28 @@ Sources/Plume/         the macOS app
   AppShell.swift, AppPages.swift, AppRulesPage.swift, AppModels.swift   the window: home, history, vocabulary, applications, settings
   AppDelegate.swift      menu bar, window, plume:// links, wiring
   MCPServer.swift, CLI.swift, Remote.swift, Doctor.swift   AI and script side
+Read aloud (`plume read-aloud`): a selection read word for word, or a summary written by a local model
+  Sources/PlumeKit/ReadAloud/
+    ReadAloudPipeline.swift    text → events (language, sentences, progress); word for word or summary
+    SpokenText.swift           what a listener expects to hear: no URLs, markdown or code; language choice
+    SentenceSplitter.swift     cuts streamed text into sentences so the voice starts on the first one
+    Voice.swift                `Voice` protocol and the Supertonic-3 voice (FluidAudio); digits spelled out first
+    SummaryService.swift       model-neutral summary request → stream of text
+    SummaryPrompt.swift        the summary prompt: sentence budget, language, input truncation
+    SummaryCleaner.swift       drops a model's reasoning and markup from the stream before it is spoken
+    LlamaSummaryService.swift  GGUF model run in process by llama.cpp, on one serial queue
+    PromptRenderer.swift       applies the model's chat template; the selection is tokenized apart
+    EngineCatalog.swift        pinned models and voices: repository, revision, size, SHA-256, markers
+    ReadAloudModels.swift      download, delete and one-at-a-time lock for the model files
+    ModelFileDownloader.swift  resumable download checked by size and SHA-256
+    ReadAloudOptions.swift     summary length, language, keep-in-memory and speed settings
+    ReadAloudError.swift       the errors the command and the app show
+    ReadAloudEval.swift        quality eval: every selection summarized by every engine, with timings
+  Sources/Plume/
+    ReadAloudCommand.swift     the command: reads, summarizes, downloads, prints `--json`
+    ReadAloudPlayer.swift      plays sentences in order through a pitch-preserving time-stretch
+    ReadAloudEvalCommand.swift `plume read-aloud --eval`: runs the eval and writes the results file
+  bench/read-aloud-eval/     README, and the blind judge page (judge.html, judge.js) for the eval results
 ```
 
 ## Releasing

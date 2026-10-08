@@ -8,7 +8,7 @@ enum CLI {
         "transcribe", "last", "list", "show", "search", "path", "mcp", "live", "render", "toggle", "stop", "cancel",
         "diarize", "doctor", "selftest", "simulate-chord", "open", "sounds", "aec", "words", "reprocess", "mictest",
         "snapshot", "drawer-open", "drawer-close", "tiroir-ouvert", "tiroir-ferme", "cancelled", "restore",
-        "format", "export", "summarize", "polish", "transform", "listen", "pause", "paste", "settings", "calls",
+        "format", "export", "summarize", "polish", "transform", "read-aloud", "listen", "pause", "paste", "settings", "calls",
         "help", "--help", "-h",
     ]
 
@@ -33,7 +33,7 @@ enum CLI {
         return commands.contains(args[1])
     }
 
-    static let usage = tr("""
+    static var usage: String { tr("""
         Plume — local dictation and transcription
 
           plume last [--mode dictee|reunion|import] [--json]   latest transcription
@@ -55,11 +55,14 @@ enum CLI {
           plume settings export|import <file.json>             back up / restore all settings
           plume format "plain text" [--style message]          see how a dictation gets formatted
           plume polish "text" | plume transform "instruction"  try the local AI (text on standard input)
+          plume read-aloud [--summary] [--text|--json] < text  read a text aloud, or a summary of it
+          plume read-aloud --download voice|<model>            download the voice or a summary model
+          plume read-aloud --eval <folder> --engines a,b --out f  quality eval (bench/read-aloud-eval)
           plume doctor                                         permissions and model status
           plume mcp                                            MCP server (stdio) for AIs
 
         Run with no argument to start the app in the menu bar.
-        """)
+        """) }
 
     static func run(_ args: [String]) async -> Int32 {
         let command = args[1]
@@ -271,6 +274,22 @@ enum CLI {
                 printError(tr("Failed:") + " \(error.localizedDescription)")
                 return 1
             }
+
+        case "read-aloud":
+            // `run` already took --json out of `rest`: parse the raw arguments.
+            guard let options = ReadAloudCommand.parse(Array(args.dropFirst(2))),
+                  let input = ReadAloudCommand.input(for: options, isTerminal: isatty(STDIN_FILENO) != 0, read: readStandardInput)
+            else {
+                printError(ReadAloudCommand.usage)
+                return 2
+            }
+            let context = ReadAloudCommand.Context(
+                models: ReadAloudModels(), catalog: SummaryEngineCatalog.all, engineInUse: settings.readAloudEngine,
+                voiceID: settings.readAloudVoice, speed: settings.readAloudSpeed,
+                options: SummaryOptions(length: settings.readAloudLength, language: settings.readAloudLanguage),
+                interface: settings.language)
+            LlamaSummaryService.log = { Log.write("llama.cpp: " + $0) }
+            return await ReadAloudCommand.run(options, context: context, input: input, emit: emit, fail: printError)
 
         case "settings":
             guard rest.count >= 2 else {

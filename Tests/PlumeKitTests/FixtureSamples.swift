@@ -63,7 +63,7 @@ enum FixtureSamples {
 
     static let voiceprint = Voiceprint(embedding: [0.125, -0.5, 0.25, 0.75], samples: 3)
 
-    /// A backup with every key 1.0.1 could save (`SettingsBackup.*Keys`).
+    /// A backup with every key the app can save (`SettingsBackup.*Keys`).
     static let backup = SettingsBackup.File(
         date: date("2026-10-03T09:00:00Z"),
         shortcuts: [
@@ -74,16 +74,20 @@ enum FixtureSamples {
             PlumeSettings.Key.transformShortcut: Shortcut(keyCode: 17, modifiers: ModifierMask.control | ModifierMask.option),
             PlumeSettings.Key.cancelShortcut: Shortcut(keyCode: 53, modifiers: 0),
             PlumeSettings.Key.restoreShortcut: Shortcut(keyCode: 15, modifiers: ModifierMask.control | ModifierMask.option),
+            PlumeSettings.Key.readAloudShortcut: Shortcut(keyCode: 15, modifiers: ModifierMask.control | ModifierMask.shift),
+            PlumeSettings.Key.summarizeAloudShortcut: Shortcut(keyCode: 1, modifiers: ModifierMask.control | ModifierMask.shift),
         ],
         booleans: Dictionary(uniqueKeysWithValues: SettingsBackup.booleanKeys.map { ($0, $0 != PlumeSettings.Key.keepHistory) }),
         numbers: [
             PlumeSettings.Key.soundVolume: 0.5, PlumeSettings.Key.audioRetentionDays: 30,
-            PlumeSettings.Key.cancelledRetentionHours: 48,
+            PlumeSettings.Key.cancelledRetentionHours: 48, PlumeSettings.Key.readAloudSpeed: 1.25,
         ],
         strings: [
             PlumeSettings.Key.model: "parakeet-ultra", PlumeSettings.Key.soundPack: "pluck",
             PlumeSettings.Key.appearance: "dark", PlumeSettings.Key.polishInstructions: "Phrases courtes.",
             PlumeSettings.Key.language: "fr",
+            PlumeSettings.Key.readAloudKeepLoaded: "always", PlumeSettings.Key.readAloudLength: "detailed",
+            PlumeSettings.Key.readAloudLanguage: "fr", PlumeSettings.Key.readAloudVoice: "supertonic3-m2",
         ],
         replacements: replacements, rules: rules)
 

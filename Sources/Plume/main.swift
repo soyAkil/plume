@@ -20,6 +20,9 @@ private func relaunchFromRealPathIfNeeded() {
 
 relaunchFromRealPathIfNeeded()
 
+// Before any FluidAudio call: FluidAudio reads the revision overrides unsynchronized.
+VoiceAssets.pinRevision()
+
 let arguments = CommandLine.arguments
 // The interface language also applies to the command line (titles, speaker names).
 L10n.current = PlumeSettings.shared.language

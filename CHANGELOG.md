@@ -4,6 +4,10 @@ One line per PR or PR stack, grouped by date, newest first. A version takes the 
 
 ## 1.0.2
 
+### 2026-10-08
+
+- Read aloud: plume read-aloud reads a text aloud word for word, or a summary written by a local model; voice and models are optional downloads (#22)
+
 ### 2026-10-06
 
 - Library: English file and setting names (latest.md, README.md, .cancelled, replacements.json, voiceprint.json); older names still read, but 1.0.1 no longer sees the vocabulary, voiceprint, cancelled recordings or appearance and sound choices (#16)

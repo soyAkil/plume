@@ -1,0 +1,196 @@
+<!-- bench/read-aloud-eval/judge.html -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume Summary Judge</title>
+<style>
+  :root { --bg: #f6f7fa; --surface: #fff; --fg: #1b2030; --muted: #5a6275; --line: #dde1ea; --accent: #3a4fb8; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151d; --surface: #1a1e29; --fg: #e4e7ef; --muted: #9aa2b5; --line: #2c3242; --accent: #8fa0ff; color-scheme: dark; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, sans-serif; }
+  main { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 24px 64px; display: grid; gap: 16px; }
+  .source, .summary { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+  .source { max-height: 40vh; overflow: auto; white-space: pre-wrap; }
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+  .summary h3 { margin: 0 0 6px; }
+  label { display: block; }
+  .muted { color: var(--muted); }
+  #problem { background: var(--surface); border: 2px solid var(--accent); border-radius: 8px; padding: 12px 16px; font-weight: 700; }
+  nav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; background: var(--surface); }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Summary judge</h1>
+  <p class="muted">Pick <code>results.json</code>. The two summaries of each selection are shown as A and B in a random order; the model names stay hidden until every selection is judged. Progress is kept in this browser.</p>
+  <input id="file" type="file" accept="application/json">
+  <section id="judge" hidden>
+    <nav><button id="prev">Previous</button><span id="position"></span><button id="next">Next</button></nav>
+    <div id="meta" class="muted"></div>
+    <div id="source" class="source"></div>
+    <div class="pair" id="pair"></div>
+    <fieldset><legend>Preference</legend>
+      <label><input type="radio" name="preference" value="A"> A</label>
+      <label><input type="radio" name="preference" value="B"> B</label>
+      <label><input type="radio" name="preference" value="equal"> Equal</label>
+    </fieldset>
+    <label>Note <input id="note" type="text" style="width:100%"></label>
+  </section>
+  <p id="problem" role="alert" hidden></p>
+  <section id="verdict" hidden></section>
+</main>
+<script src="judge.js"></script>
+<script>
+  const LABELS = { mainPoint: "Main point kept", nothingInvented: "Nothing invented", rightLanguage: "Right language", rightLength: "Right length" };
+  let results = null, verdicts = {}, index = 0, storageKey = "";
+
+  function save() { try { localStorage.setItem(storageKey, JSON.stringify(verdicts)); } catch (e) {} }
+  function load() { try { return JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (e) { return {}; } }
+  function complete(v) { return v && v.preference && v.A && v.B; }
+
+  function show() {
+    const item = results.items[index];
+    const ids = results.engines.map((e) => e.id);
+    const verdict = verdicts[item.file] = verdicts[item.file] || { order: PlumeJudge.orderFor(item.file, ids, verdicts), A: {}, B: {} };
+    save();
+    document.getElementById("position").textContent = `${index + 1} / ${results.items.length}`;
+    document.getElementById("meta").textContent = `${item.file} · ${item.words} words`;
+    document.getElementById("source").textContent = item.text;
+    const pair = document.getElementById("pair");
+    pair.innerHTML = "";
+    ["A", "B"].forEach((label, i) => {
+      const outcome = item.results[verdict.order[i]] || {};
+      const box = document.createElement("div");
+      box.className = "summary";
+      box.innerHTML = `<h3>${label}</h3><p></p>` + PlumeJudge.CRITERIA.map((c) =>
+        `<label><input type="checkbox" data-label="${label}" data-criterion="${c}"> ${LABELS[c]}</label>`).join("");
+      box.querySelector("p").textContent = outcome.error ? `Error: ${outcome.error}` : outcome.summary;
+      box.querySelectorAll("input").forEach((input) => {
+        input.checked = !!verdict[label][input.dataset.criterion];
+        input.onchange = () => { verdict[label][input.dataset.criterion] = input.checked; save(); maybeReveal(); };
+      });
+      pair.appendChild(box);
+    });
+    document.querySelectorAll("input[name=preference]").forEach((radio) => {
+      radio.checked = verdict.preference === radio.value;
+      radio.onchange = () => { verdict.preference = radio.value; save(); maybeReveal(); };
+    });
+    const note = document.getElementById("note");
+    note.value = verdict.note || "";
+    note.oninput = () => { verdict.note = note.value; save(); };
+  }
+
+  const CLASSES = { all: "All", short: "Short (< 300 words)", medium: "Medium", long: "Long (> 1,500 words)" };
+  const seconds = (value) => (typeof value === "number" ? value.toFixed(1) + " s" : "–");
+
+  function cell(row, text, tag = "td") {
+    const node = document.createElement(tag);
+    node.textContent = text;
+    row.appendChild(node);
+    return node;
+  }
+
+  function table(headers, rows) {
+    const node = document.createElement("table");
+    const head = node.insertRow();
+    headers.forEach((h) => cell(head, h, "th"));
+    rows.forEach((values) => {
+      const row = node.insertRow();
+      values.forEach((value) => cell(row, value));
+    });
+    return node;
+  }
+
+  function maybeReveal() {
+    if (!results.items.every((item) => complete(verdicts[item.file]))) return;
+    const summary = PlumeJudge.summarize(results, verdicts);
+    const section = document.getElementById("verdict");
+    section.hidden = false;
+    section.replaceChildren();
+    const heading = document.createElement("h2");
+    heading.textContent = "Verdict";
+    section.appendChild(heading);
+
+    // One row per model and length class. A share under its threshold is bold with a marker,
+    // so it reads without color: main point and nothing invented 90 %, right language 95 %.
+    const shareRows = [];
+    for (const engine of results.engines) {
+      for (const key of Object.keys(CLASSES)) {
+        const bucket = summary.engines[engine.id][key];
+        if (!bucket || bucket.n === 0) continue;
+        shareRows.push([engine.name, CLASSES[key], String(bucket.n)].concat(PlumeJudge.CRITERIA.map((c) => {
+          const text = Math.round(bucket[c] * 100) + " %";
+          return PlumeJudge.below(c, bucket[c]) ? "▼ " + text : text;
+        })));
+      }
+    }
+    const shares = table(["Model", "Length", "Selections"].concat(PlumeJudge.CRITERIA.map((c) => LABELS[c])), shareRows);
+    shares.querySelectorAll("td").forEach((td) => { if (td.textContent.startsWith("▼")) td.style.fontWeight = "700"; });
+    section.appendChild(shares);
+    const legend = document.createElement("p");
+    legend.className = "muted";
+    legend.textContent = "▼ (bold) = below the bar: 90 % for main point and nothing invented, 95 % for right language.";
+    section.appendChild(legend);
+
+    const timingRows = results.engines.map((engine) => {
+      const s = summary.engines[engine.id];
+      return [engine.name, String(s.preferred), seconds(engine.coldLoadSeconds), seconds(s.cold.firstSentenceSeconds), seconds(s.cold.totalSeconds),
+              seconds(s.medianFirstSentenceSeconds), seconds(s.medianTotalSeconds)];
+    });
+    section.appendChild(table(["Model", "Preferred", "Cold load", "First file: first sentence", "First file: total", "Warm median: first sentence", "Warm median: total"], timingRows));
+    const ties = document.createElement("p");
+    ties.textContent = `Ties: ${summary.ties}`;
+    section.appendChild(ties);
+
+    const button = document.createElement("button");
+    button.className = "primary";
+    button.textContent = "Export verdicts.json";
+    button.onclick = () => {
+      const blob = new Blob([JSON.stringify({ verdicts, summary }, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "verdicts.json";
+      link.click();
+    };
+    section.appendChild(button);
+    const note = document.createElement("p");
+    note.className = "muted";
+    note.textContent = "The file downloads to your Downloads folder; move it next to results.json.";
+    section.appendChild(note);
+  }
+
+  function refuse(message) {
+    results = null;
+    document.getElementById("judge").hidden = true;
+    document.getElementById("verdict").hidden = true;
+    const box = document.getElementById("problem");
+    box.textContent = message;
+    box.hidden = false;
+  }
+
+  document.getElementById("file").onchange = async (event) => {
+    document.getElementById("problem").hidden = true;
+    let parsed;
+    try { parsed = JSON.parse(await event.target.files[0].text()); } catch (e) { return refuse("This file is not valid JSON."); }
+    if (!parsed || !Array.isArray(parsed.engines) || parsed.engines.length !== 2) {
+      return refuse("This results file must hold exactly two models to compare.");
+    }
+    if (!Array.isArray(parsed.items) || parsed.items.length === 0) return refuse("This results file has no selections.");
+    results = parsed;
+    storageKey = "plume-judge-" + results.created;
+    verdicts = load();
+    index = 0;
+    document.getElementById("judge").hidden = false;
+    show();
+    maybeReveal();
+  };
+  document.getElementById("prev").onclick = () => { if (index > 0) { index--; show(); } };
+  document.getElementById("next").onclick = () => { if (index < results.items.length - 1) { index++; show(); } };
+</script>
+</body>
+</html>

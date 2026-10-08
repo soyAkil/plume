@@ -191,6 +191,8 @@ struct SavedFormatTests {
         #expect(PlumeSettings.Key.customModelPath == "customModelPath")
         #expect(PlumeSettings.Key.onboarded == "onboarded")
         #expect(PlumeSettings.Key.changelogSeen == "changelogSeen")
+        #expect(PlumeSettings.Key.readAloudEngine == "readAloudEngine")
+        #expect(PlumeSettings.Key.readAloudPendingDownload == "readAloudPendingDownload")
     }
 
     /// A format change adds the folder of its version: the newest contains everything

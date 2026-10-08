@@ -12,6 +12,7 @@ APP="build/Plume.app"
 ./scripts/signing-identity.sh
 KEYCHAIN="$HOME/Library/Keychains/plume-signing.keychain-db"
 codesign --force --deep --sign "Plume Local Signing" --keychain "$KEYCHAIN" "$APP/Contents/Frameworks/Sparkle.framework"
+codesign --force --sign "Plume Local Signing" --keychain "$KEYCHAIN" "$APP/Contents/Frameworks/llama.framework"
 codesign --force --sign "Plume Local Signing" --keychain "$KEYCHAIN" "$APP"
 
 if [[ "${1:-}" == "--install" ]]; then
