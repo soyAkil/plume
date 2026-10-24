@@ -90,7 +90,7 @@ private struct RuleCard: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(rule.name).font(UI.sans(14, .medium))
                         if rule.bundleID != "*" {
-                            Text(rule.bundleID).font(UI.mono(11)).foregroundStyle(UI.text3)
+                            Text(rule.bundleID + (rule.isBuiltIn ? " · " + tr("built in") : "")).font(UI.mono(11)).foregroundStyle(UI.text3)
                         }
                     }
                     Spacer()
@@ -100,15 +100,17 @@ private struct RuleCard: View {
                     .labelsHidden()
                     .frame(width: 150)
                     .help(rule.style.detail)
-                    Button(action: remove) {
-                        Icon(.x, size: 12)
-                            .foregroundStyle(UI.text3)
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
+                    if !rule.isBuiltIn {
+                        Button(action: remove) {
+                            Icon(.x, size: 12)
+                                .foregroundStyle(UI.text3)
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PressStyle())
+                        .help(tr("Remove this rule"))
+                        .opacity(hovering ? 1 : 0.5)
                     }
-                    .buttonStyle(PressStyle())
-                    .help(tr("Remove this rule"))
-                    .opacity(hovering ? 1 : 0.5)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
@@ -116,6 +118,10 @@ private struct RuleCard: View {
                 Rectangle().fill(UI.line).frame(height: 1).padding(.leading, 14)
                 RuleToggle(
                     tr("Send with Return"), detail: tr("The message is sent as soon as the text is pasted."), isOn: $rule.pressReturn)
+                Rectangle().fill(UI.line).frame(height: 1).padding(.leading, 14)
+                RuleKey(
+                    tr("Key to press first"), detail: tr("Pressed before pasting, to open the field: T opens the Minecraft chat."),
+                    key: $rule.openKey, delay: $rule.openDelay)
                 Rectangle().fill(UI.line).frame(height: 1).padding(.leading, 14)
                 RuleToggle(
                     tr("Clean up with the local AI"),
@@ -143,6 +149,63 @@ private struct RuleCard: View {
         .onHover { hovering = $0 }
         .animation(UI.quick, value: hovering)
         .animation(UI.quick, value: rule.polish)
+    }
+}
+
+/// One letter, pressed before the paste; empty for none.
+private struct RuleKey: View {
+    var title: String
+    var detail: String
+    @Binding var key: String
+    /// Seconds; shown and typed in milliseconds.
+    @Binding var delay: Double
+
+    init(_ title: String, detail: String, key: Binding<String>, delay: Binding<Double>) {
+        self.title = title
+        self.detail = detail
+        _key = key
+        _delay = delay
+    }
+
+    private var milliseconds: Binding<String> {
+        Binding(
+            get: { String(Int((delay * 1000).rounded())) },
+            set: { if let value = Int($0.filter(\.isNumber)) { delay = Double(value) / 1000 } })
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(UI.sans(14))
+                Text(detail).font(UI.sans(13)).foregroundStyle(UI.text2).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if !key.isEmpty {
+                Text(tr("then wait")).font(UI.sans(13)).foregroundStyle(UI.text2)
+                TextField("", text: milliseconds)
+                    .textFieldStyle(.plain)
+                    .font(UI.mono(13))
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 44)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 4)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(UI.hover))
+                Text("ms").font(UI.sans(13)).foregroundStyle(UI.text2)
+            }
+            TextField(tr("none"), text: $key)
+                .textFieldStyle(.plain)
+                .font(UI.mono(13))
+                .multilineTextAlignment(.center)
+                .frame(width: 52)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(UI.hover))
+                .onChange(of: key) { _, new in
+                    let letter = String(new.trimmingCharacters(in: .whitespaces).uppercased().prefix(1))
+                    if letter != new { key = letter }
+                }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }
 

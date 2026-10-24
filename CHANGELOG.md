@@ -4,6 +4,11 @@ One line per PR or PR stack, grouped by date, newest first. A version takes the 
 
 ## 1.0.2
 
+### 2026-10-24
+
+- Applications: a "key to press first" per app, and a built-in Minecraft rule: T opens the chat, the dictation is pasted and sent with Return (#24)
+- Paste: the dictation lands in games that poll the keyboard (Minecraft chat), and a slow transcription still pastes when the app in front has not changed; the log says which path was taken (#23)
+
 ### 2026-10-06
 
 - Library: English file and setting names (latest.md, README.md, .cancelled, replacements.json, voiceprint.json); older names still read, but 1.0.1 no longer sees the vocabulary, voiceprint, cancelled recordings or appearance and sound choices (#16)

@@ -280,7 +280,7 @@ final class SessionController: ObservableObject {
         activeSessions.insert(id)
         let front = NSWorkspace.shared.frontmostApplication
         frontApp = front?.localizedName == "loginwindow" ? nil : front?.localizedName
-        frontBundleID = front?.bundleIdentifier
+        frontBundleID = AppRule.identifier(bundleID: front?.bundleIdentifier, processName: front?.localizedName)
         selection = ""
         hasSelection = false
         streaming = intent == .dictation && mode == .dictation && settings.streamingPaste && settings.pasteAfterDictation
@@ -783,6 +783,13 @@ final class SessionController: ObservableObject {
         return rule?.polish ?? settings.polish
     }
 
+    /// After a long wait (model being loaded or downloaded), the cursor is probably no longer in
+    /// the same place, so the text is only copied; unless the user is still in the app the
+    /// dictation started in, where the field is most likely still focused.
+    static func cursorProbablyMoved(waited: TimeInterval, startedIn: String?, nowIn: String?) -> Bool {
+        waited > 8 && startedIn != nowIn
+    }
+
     private func finishDictation(
         id: String, date: Date, duration: Double, samples: [Float], app: String?, bundleID: String?,
         intent: Intent, stoppedAt: Date, safety: URL?, live: LiveTranscriber? = nil
@@ -839,9 +846,13 @@ final class SessionController: ObservableObject {
                 finish(.done(tr("Transcribed")), hideAfter: 1.0)
             } else if TestHooks.noPaste {
                 finish(.done(tr("Pasted")), hideAfter: 1.0)
-            } else if Date().timeIntervalSince(stoppedAt) > 8 {
-                // After a long wait (model being downloaded), the cursor is probably
-                // no longer in the same place: copy without pasting.
+            } else if Self.cursorProbablyMoved(
+                waited: Date().timeIntervalSince(stoppedAt), startedIn: bundleID,
+                nowIn: AppRule.identifier(
+                    bundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                    processName: NSWorkspace.shared.frontmostApplication?.localizedName))
+            {
+                Log.write("paste: copied only, \(Int(Date().timeIntervalSince(stoppedAt))) s wait and the front app changed")
                 Paster.copy(text)
                 finish(.done(tr("Copied · ⌘V to paste")), hideAfter: 3)
             } else if settings.pasteAfterDictation {
@@ -849,8 +860,18 @@ final class SessionController: ObservableObject {
                 if settings.smartInsert, intent == .dictation, let context = Paster.insertionContext() {
                     toPaste = SmartInsert.adapt(text, context: context)
                 }
-                let pasted = Paster.paste(toPaste, restoreClipboard: settings.restoreClipboard, typing: rule?.typeText == true)
-                if pasted, pressReturn { Paster.pressReturn() }
+                var pasted = false
+                let steps = Paster.plan(openKey: rule?.openKey ?? "", openDelay: rule?.openDelay ?? 0.5, pressReturn: pressReturn)
+                if steps.count > 1 { Log.write("paste: " + Paster.describe(steps)) }
+                for step in steps {
+                    switch step {
+                    case .press(let key, let at): Paster.press(key, after: at)
+                    case .erase(let at): Paster.erase(1, after: at)
+                    case .paste(let at):
+                        pasted = Paster.paste(toPaste, restoreClipboard: settings.restoreClipboard, typing: rule?.typeText == true, after: at)
+                    case .pressReturn(let at): if pasted { Paster.pressReturn(after: at) }
+                    }
+                }
                 finish(.done(pasted ? tr("Pasted") : tr("Copied · ⌘V to paste")), hideAfter: pasted ? 1.0 : 2.5)
                 if !pasted, !askedForAccessibility {
                     // Without the Accessibility permission, pasting is impossible: ask for it once.

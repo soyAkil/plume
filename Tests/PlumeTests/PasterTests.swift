@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Testing
 @testable import Plume
 
@@ -82,6 +83,70 @@ struct PasterTests {
             Paster.restore(saved ?? [], to: pasteboard, ifUnchangedSince: pasteboard.changeCount)
             #expect(pasteboard.string(forType: .string) == nil)
         }
+    }
+
+    /// Games (Minecraft, through GLFW) poll the modifier keys instead of reading the flags on
+    /// the key event: ⌘ has to be pressed for real around the V, and released after.
+    @Test func aShortcutPressesItsModifiersForReal() {
+        let v = CGKeyCode(9)
+        #expect(Paster.keystrokes(key: v, flags: .maskCommand) == [
+            Paster.Keystroke(key: CGKeyCode(kVK_Command), down: true, flags: .maskCommand),
+            Paster.Keystroke(key: v, down: true, flags: .maskCommand),
+            Paster.Keystroke(key: v, down: false, flags: .maskCommand),
+            Paster.Keystroke(key: CGKeyCode(kVK_Command), down: false, flags: []),
+        ])
+    }
+
+    @Test func aPlainKeyIsJustPressedAndReleased() {
+        let enter = CGKeyCode(kVK_Return)
+        #expect(Paster.keystrokes(key: enter, flags: []) == [
+            Paster.Keystroke(key: enter, down: true, flags: []),
+            Paster.Keystroke(key: enter, down: false, flags: []),
+        ])
+    }
+
+    @Test func severalModifiersAreReleasedInReverseOrder() {
+        let enter = CGKeyCode(kVK_Return)
+        #expect(Paster.keystrokes(key: enter, flags: [.maskShift, .maskCommand]) == [
+            Paster.Keystroke(key: CGKeyCode(kVK_Shift), down: true, flags: .maskShift),
+            Paster.Keystroke(key: CGKeyCode(kVK_Command), down: true, flags: [.maskShift, .maskCommand]),
+            Paster.Keystroke(key: enter, down: true, flags: [.maskShift, .maskCommand]),
+            Paster.Keystroke(key: enter, down: false, flags: [.maskShift, .maskCommand]),
+            Paster.Keystroke(key: CGKeyCode(kVK_Command), down: false, flags: .maskShift),
+            Paster.Keystroke(key: CGKeyCode(kVK_Shift), down: false, flags: []),
+        ])
+    }
+
+    /// A slow transcription (model loading) only leaves the text on the clipboard if the user
+    /// has left the app in the meantime; a game with no bundle identifier counts as the same app.
+    @Test func aLongWaitOnlyCopiesIfTheAppChanged() {
+        #expect(!SessionController.cursorProbablyMoved(waited: 3, startedIn: "a", nowIn: "b"))
+        #expect(!SessionController.cursorProbablyMoved(waited: 20, startedIn: "a", nowIn: "a"))
+        #expect(!SessionController.cursorProbablyMoved(waited: 20, startedIn: nil, nowIn: nil))
+        #expect(SessionController.cursorProbablyMoved(waited: 20, startedIn: "a", nowIn: "b"))
+        #expect(SessionController.cursorProbablyMoved(waited: 20, startedIn: nil, nowIn: "b"))
+    }
+
+    @Test func aPlainPasteIsOneStep() {
+        #expect(Paster.plan(openKey: "", pressReturn: false) == [.paste(at: 0.05)])
+    }
+
+    @Test func returnComesABeatAfterThePaste() {
+        #expect(Paster.plan(openKey: "", pressReturn: true) == [.paste(at: 0.05), .pressReturn(at: 0.35)])
+    }
+
+    /// Minecraft: T opens the chat and its letter lands in the box, so it is erased once the
+    /// box is there; then the paste, then Return sends the message.
+    @Test func anOpeningKeyIsFollowedByBackspacePasteAndReturn() {
+        let steps = Paster.plan(openKey: "T", openDelay: 0.5, pressReturn: true)
+        #expect(steps == [.press("T", at: 0), .erase(at: 0.5), .paste(at: 0.65), .pressReturn(at: 0.95)])
+        #expect(Paster.describe(steps) == "T at 0 ms, Backspace at 500 ms, ⌘V at 650 ms, Return at 950 ms")
+    }
+
+    @Test func theOpeningDelayIsTheRulesOwn() {
+        #expect(Paster.plan(openKey: "T", openDelay: 1, pressReturn: false) == [
+            .press("T", at: 0), .erase(at: 1), .paste(at: 1.15),
+        ])
     }
 
     @Test func aCopyMadeInTheMeantimeStays() {

@@ -104,10 +104,15 @@ public struct AppRule: Codable, Sendable, Identifiable, Equatable {
     public var instructions: String
     /// Type the text key by key rather than pasting, for apps that refuse ⌘V.
     public var typeText: Bool
+    /// A key pressed before pasting, to open the field: `T` opens the Minecraft chat. Empty: none.
+    public var openKey: String
+    /// Seconds given to the field to appear after the opening key, before the paste.
+    public var openDelay: Double
 
     public init(
         id: UUID = UUID(), bundleID: String, name: String, style: DictationStyle = .standard,
-        pressReturn: Bool = false, polish: Bool = false, instructions: String = "", typeText: Bool = false
+        pressReturn: Bool = false, polish: Bool = false, instructions: String = "", typeText: Bool = false,
+        openKey: String = "", openDelay: Double = 0.5
     ) {
         self.id = id
         self.bundleID = bundleID
@@ -117,10 +122,22 @@ public struct AppRule: Codable, Sendable, Identifiable, Equatable {
         self.polish = polish
         self.instructions = instructions
         self.typeText = typeText
+        self.openKey = openKey
+        self.openDelay = openDelay
+    }
+
+    /// Comes with Plume (`AppRuleStore.builtIn`): editable, not removable.
+    public var isBuiltIn: Bool { AppRuleStore.builtIn.contains { $0.bundleID == bundleID } }
+
+    /// What a rule is keyed on: the bundle identifier, or `process:<name>` for an app that has
+    /// none (the Minecraft game is a bare `java` process).
+    public static func identifier(bundleID: String?, processName: String?) -> String? {
+        if let bundleID, !bundleID.isEmpty { return bundleID }
+        return processName.map { "process:\($0)" }
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, bundleID, name, style, pressReturn, polish, instructions, typeText
+        case id, bundleID, name, style, pressReturn, polish, instructions, typeText, openKey, openDelay
     }
 
     public init(from decoder: Decoder) throws {
@@ -133,14 +150,31 @@ public struct AppRule: Codable, Sendable, Identifiable, Equatable {
         polish = try values.decodeIfPresent(Bool.self, forKey: .polish) ?? false
         instructions = try values.decodeIfPresent(String.self, forKey: .instructions) ?? ""
         typeText = try values.decodeIfPresent(Bool.self, forKey: .typeText) ?? false
+        openKey = try values.decodeIfPresent(String.self, forKey: .openKey) ?? ""
+        openDelay = try values.decodeIfPresent(Double.self, forKey: .openDelay) ?? 0.5
     }
 }
 
 public enum AppRuleStore {
     public static var url: URL { PlumeSettings.supportDirectory.appendingPathComponent("applications.json") }
 
+    /// Rules that come with Plume, for apps that need one to work at all: in Minecraft the chat
+    /// box has to be opened (T) and the message sent (Return). Shown and edited like the others;
+    /// a saved rule for the same app replaces it.
+    public static let builtIn = [
+        AppRule(
+            id: UUID(uuidString: "4D494E45-4352-4146-5400-000000000001")!,
+            bundleID: AppRule.identifier(bundleID: nil, processName: "java")!, name: "Minecraft",
+            style: .message, pressReturn: true, openKey: "T"),
+    ]
+
+    /// The saved rules, plus the built-in ones they don't replace.
+    public static func withBuiltIn(_ rules: [AppRule]) -> [AppRule] {
+        rules + builtIn.filter { built in !rules.contains { $0.bundleID == built.bundleID } }
+    }
+
     public static func load() -> [AppRule] {
-        read(from: url) ?? []
+        withBuiltIn(read(from: url) ?? [])
     }
 
     public static func save(_ items: [AppRule]) {
