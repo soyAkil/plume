@@ -64,13 +64,16 @@ enum Paster {
     static func paste(_ text: String, restoreClipboard: Bool, typing: Bool = false) -> Bool {
         let pasteboard = NSPasteboard.general
         guard isTrusted else {
+            Log.write("paste: copied only, Accessibility not granted")
             copy(text)
             return false
         }
         if typing {
+            Log.write("paste: typed into \(frontmostName)")
             type(text)
             return true
         }
+        Log.write("paste: ⌘V into \(frontmostName)")
         let saved = stage(text, restoreClipboard: restoreClipboard, on: pasteboard)
         let marker = pasteboard.changeCount
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -135,14 +138,54 @@ enum Paster {
         }
     }
 
+    /// One simulated key event.
+    struct Keystroke: Equatable {
+        var key: CGKeyCode
+        var down: Bool
+        var flags: CGEventFlags
+    }
+
+    private static let modifierKeys: [(CGEventFlags, CGKeyCode)] = [
+        (.maskControl, CGKeyCode(kVK_Control)), (.maskAlternate, CGKeyCode(kVK_Option)),
+        (.maskShift, CGKeyCode(kVK_Shift)), (.maskCommand, CGKeyCode(kVK_Command)),
+    ]
+
+    /// The events for a shortcut: the modifiers are pressed for real before the key and released
+    /// after it, each event carrying the modifiers held so far. Native apps read the flags on the
+    /// key alone, but games poll the modifier keys' state (Minecraft, through GLFW) and would see
+    /// a plain V instead of ⌘V.
+    static func keystrokes(key: CGKeyCode, flags: CGEventFlags) -> [Keystroke] {
+        let modifiers = modifierKeys.filter { flags.contains($0.0) }
+        var held: CGEventFlags = []
+        var events: [Keystroke] = []
+        for (flag, code) in modifiers {
+            held.insert(flag)
+            events.append(Keystroke(key: code, down: true, flags: held))
+        }
+        events.append(Keystroke(key: key, down: true, flags: held))
+        events.append(Keystroke(key: key, down: false, flags: held))
+        for (flag, code) in modifiers.reversed() {
+            held.remove(flag)
+            events.append(Keystroke(key: code, down: false, flags: held))
+        }
+        return events
+    }
+
     private static func post(key: CGKeyCode, flags: CGEventFlags) {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
-        down?.flags = flags
-        up?.flags = flags
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+        for stroke in keystrokes(key: key, flags: flags) {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: stroke.key, keyDown: stroke.down)
+            event?.flags = stroke.flags
+            event?.post(tap: .cghidEventTap)
+            // A game polls the keys between frames: give it a moment to see each one.
+            usleep(10_000)
+        }
+    }
+
+    /// The frontmost app, for the log: its bundle identifier, or its name (a bare `java` process has none).
+    static var frontmostName: String {
+        let app = NSWorkspace.shared.frontmostApplication
+        return app?.bundleIdentifier ?? app?.localizedName ?? "?"
     }
 
     /// Code of the key that carries this letter: it isn't in the same place on all

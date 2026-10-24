@@ -783,6 +783,13 @@ final class SessionController: ObservableObject {
         return rule?.polish ?? settings.polish
     }
 
+    /// After a long wait (model being loaded or downloaded), the cursor is probably no longer in
+    /// the same place, so the text is only copied; unless the user is still in the app the
+    /// dictation started in, where the field is most likely still focused.
+    static func cursorProbablyMoved(waited: TimeInterval, startedIn: String?, nowIn: String?) -> Bool {
+        waited > 8 && startedIn != nowIn
+    }
+
     private func finishDictation(
         id: String, date: Date, duration: Double, samples: [Float], app: String?, bundleID: String?,
         intent: Intent, stoppedAt: Date, safety: URL?, live: LiveTranscriber? = nil
@@ -839,9 +846,11 @@ final class SessionController: ObservableObject {
                 finish(.done(tr("Transcribed")), hideAfter: 1.0)
             } else if TestHooks.noPaste {
                 finish(.done(tr("Pasted")), hideAfter: 1.0)
-            } else if Date().timeIntervalSince(stoppedAt) > 8 {
-                // After a long wait (model being downloaded), the cursor is probably
-                // no longer in the same place: copy without pasting.
+            } else if Self.cursorProbablyMoved(
+                waited: Date().timeIntervalSince(stoppedAt), startedIn: bundleID,
+                nowIn: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+            {
+                Log.write("paste: copied only, \(Int(Date().timeIntervalSince(stoppedAt))) s wait and the front app changed")
                 Paster.copy(text)
                 finish(.done(tr("Copied · ⌘V to paste")), hideAfter: 3)
             } else if settings.pasteAfterDictation {
