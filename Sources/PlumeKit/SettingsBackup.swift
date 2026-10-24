@@ -34,7 +34,7 @@ public enum SettingsBackup {
     static let shortcutKeys = [
         PlumeSettings.Key.dictationShortcut, PlumeSettings.Key.meetingShortcut, PlumeSettings.Key.openShortcut,
         PlumeSettings.Key.pasteLastShortcut, PlumeSettings.Key.transformShortcut, PlumeSettings.Key.cancelShortcut,
-        PlumeSettings.Key.restoreShortcut,
+        PlumeSettings.Key.restoreShortcut, PlumeSettings.Key.gameChatShortcut,
     ]
 
     public static func snapshot(settings: PlumeSettings = .shared) -> File {

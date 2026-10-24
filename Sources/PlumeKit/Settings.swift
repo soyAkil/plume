@@ -104,6 +104,7 @@ public final class PlumeSettings: @unchecked Sendable {
         static let microphoneUID = "microphoneUID"
         static let dictationShortcut = "dictationShortcut"
         static let meetingShortcut = "meetingShortcut"
+        static let gameChatShortcut = "gameChatShortcut"
         static let onboarded = "onboarded"
         static let changelogSeen = "changelogSeen"
     }
@@ -358,6 +359,15 @@ public final class PlumeSettings: @unchecked Sendable {
     public var meetingShortcut: Shortcut {
         get { shortcut(forKey: Key.meetingShortcut) ?? Self.defaultMeetingShortcut }
         set { setShortcut(newValue, forKey: Key.meetingShortcut) }
+    }
+
+    /// ⌃⌥ by default: a dictation that opens the game chat, pastes and sends (Minecraft).
+    public static let defaultGameChatShortcut = Shortcut(
+        keyCode: nil, modifiers: ModifierMask.control | ModifierMask.option)
+
+    public var gameChatShortcut: Shortcut {
+        get { shortcut(forKey: Key.gameChatShortcut) ?? Self.defaultGameChatShortcut }
+        set { setShortcut(newValue, forKey: Key.gameChatShortcut) }
     }
 
     /// Shortcut that opens the Plume window (none by default).

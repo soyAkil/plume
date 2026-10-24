@@ -41,6 +41,8 @@
       "id" : "6F1C2A10-0000-4000-8000-000000000003",
       "instructions" : "Ton cordial.",
       "name" : "Mail",
+      "openDelay" : 0.5,
+      "openKey" : "",
       "polish" : true,
       "pressReturn" : false,
       "style" : "standard",
@@ -51,6 +53,8 @@
       "id" : "6F1C2A10-0000-4000-8000-000000000004",
       "instructions" : "",
       "name" : "Slack",
+      "openDelay" : 0.5,
+      "openKey" : "",
       "polish" : false,
       "pressReturn" : true,
       "style" : "message",
@@ -61,10 +65,24 @@
       "id" : "6F1C2A10-0000-4000-8000-000000000005",
       "instructions" : "",
       "name" : "Toutes les autres",
+      "openDelay" : 0.5,
+      "openKey" : "",
       "polish" : false,
       "pressReturn" : false,
       "style" : "casual",
       "typeText" : true
+    },
+    {
+      "bundleID" : "process:java",
+      "id" : "6F1C2A10-0000-4000-8000-000000000006",
+      "instructions" : "",
+      "name" : "Minecraft",
+      "openDelay" : 0.5,
+      "openKey" : "T",
+      "polish" : false,
+      "pressReturn" : true,
+      "style" : "message",
+      "typeText" : false
     }
   ],
   "shortcuts" : {
@@ -75,6 +93,9 @@
     "dictationShortcut" : {
       "keyCode" : 49,
       "modifiers" : 2
+    },
+    "gameChatShortcut" : {
+      "modifiers" : 3
     },
     "meetingShortcut" : {
       "modifiers" : 5

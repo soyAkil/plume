@@ -1037,6 +1037,9 @@ struct SettingsPage: View {
             SettingRow(tr("Record a meeting"), detail: tr("Meeting mode can also be switched on by hovering the notch.")) {
                 ShortcutRecorder(shortcut: $settings.meetingShortcut, optional: true, onRecording: settings.onRecordingShortcut)
             }
+            SettingRow(tr("Game chat"), detail: tr("Press, speak, press again: in Minecraft the chat opens, the text is pasted and sent. Elsewhere, a plain dictation.")) {
+                ShortcutRecorder(shortcut: $settings.gameChatShortcut, optional: true, onRecording: settings.onRecordingShortcut)
+            }
             SettingRow(tr("Transform the selection"), detail: settings.ai.isAvailable
                 ? tr("Select text, say an instruction (“translate to French”, “shorter”), and the local AI rewrites it. With nothing selected, it writes.")
                 : (settings.ai.reason ?? "")) {

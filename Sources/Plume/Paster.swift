@@ -60,21 +60,80 @@ enum Paster {
     ///   apps that don't paste (remote desktop, some games or terminals).
     /// - Returns: `true` if the paste was started, `false` if the text is only copied
     ///   (Accessibility permission missing).
+    /// What happens around a paste, and when (seconds from now).
+    enum Step: Equatable {
+        /// A key that opens the field first (T, the Minecraft chat).
+        case press(String, at: TimeInterval)
+        /// Backspace: the opening key's letter lands in the field it opened (Minecraft).
+        case erase(at: TimeInterval)
+        case paste(at: TimeInterval)
+        case pressReturn(at: TimeInterval)
+    }
+
+    /// Gaps that don't depend on the app: Backspace to ⌘V, and ⌘V to Return.
+    static let eraseToPaste: TimeInterval = 0.15
+    static let pasteToReturn: TimeInterval = 0.3
+
+    /// The sequence for a dictation: the opening key, if any, gets `openDelay` for the field to
+    /// appear (Minecraft opens its chat on a later game tick), then its stray letter is erased;
+    /// Return comes a beat after the paste.
+    static func plan(openKey: String, openDelay: TimeInterval = 0.5, pressReturn: Bool) -> [Step] {
+        var steps: [Step] = []
+        var at: TimeInterval = 0.05
+        if !openKey.isEmpty {
+            steps.append(.press(openKey, at: 0))
+            steps.append(.erase(at: openDelay))
+            at = openDelay + eraseToPaste
+        }
+        steps.append(.paste(at: at))
+        if pressReturn { steps.append(.pressReturn(at: at + pasteToReturn)) }
+        return steps
+    }
+
+    /// For the log: `T at 0 ms, Backspace at 500 ms, ⌘V at 650 ms, Return at 950 ms`.
+    static func describe(_ steps: [Step]) -> String {
+        func ms(_ t: TimeInterval) -> String { "\(Int((t * 1000).rounded())) ms" }
+        return steps.map { step in
+            switch step {
+            case .press(let key, let at): "\(key) at \(ms(at))"
+            case .erase(let at): "Backspace at \(ms(at))"
+            case .paste(let at): "⌘V at \(ms(at))"
+            case .pressReturn(let at): "Return at \(ms(at))"
+            }
+        }.joined(separator: ", ")
+    }
+
+    /// Presses the key that carries this letter, alone (an app rule's opening key), as a plain
+    /// key event with its character (without it, the Minecraft chat doesn't open), held 50 ms:
+    /// a game that is grabbing the cursor can miss a shorter press.
+    static func press(_ letter: String, after delay: TimeInterval = 0) {
+        guard isTrusted, let key = keyCode(for: letter) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            let source = CGEventSource(stateID: .combinedSessionState)
+            CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)?.post(tap: .cghidEventTap)
+            usleep(50_000)
+            CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)?.post(tap: .cghidEventTap)
+        }
+    }
+
     @discardableResult
-    static func paste(_ text: String, restoreClipboard: Bool, typing: Bool = false) -> Bool {
+    static func paste(_ text: String, restoreClipboard: Bool, typing: Bool = false, after delay: TimeInterval = 0.05) -> Bool {
         let pasteboard = NSPasteboard.general
         guard isTrusted else {
+            Log.write("paste: copied only, Accessibility not granted")
             copy(text)
             return false
         }
         if typing {
+            Log.write("paste: typed into \(frontmostName)")
             type(text)
             return true
         }
+        Log.write("paste: ⌘V into \(frontmostName)")
         let saved = stage(text, restoreClipboard: restoreClipboard, on: pasteboard)
         let marker = pasteboard.changeCount
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            post(key: keyCode(for: "V"), flags: .maskCommand)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            post(key: keyCode(for: "V") ?? CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
             guard let saved else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 restore(saved, to: pasteboard, ifUnchangedSince: marker)
@@ -116,9 +175,14 @@ enum Paster {
         }
     }
 
-    /// Erases the last `count` typed characters (the live text was corrected).
-    static func erase(_ count: Int) {
+    /// Erases the last `count` typed characters (the live text was corrected, or the opening
+    /// key's letter landed in the field).
+    static func erase(_ count: Int, after delay: TimeInterval = 0) {
         guard isTrusted, count > 0 else { return }
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { erase(count) }
+            return
+        }
         for _ in 0..<count {
             post(key: CGKeyCode(kVK_Delete), flags: [])
             usleep(1_500)
@@ -135,20 +199,60 @@ enum Paster {
         }
     }
 
+    /// One simulated key event.
+    struct Keystroke: Equatable {
+        var key: CGKeyCode
+        var down: Bool
+        var flags: CGEventFlags
+    }
+
+    private static let modifierKeys: [(CGEventFlags, CGKeyCode)] = [
+        (.maskControl, CGKeyCode(kVK_Control)), (.maskAlternate, CGKeyCode(kVK_Option)),
+        (.maskShift, CGKeyCode(kVK_Shift)), (.maskCommand, CGKeyCode(kVK_Command)),
+    ]
+
+    /// The events for a shortcut: the modifiers are pressed for real before the key and released
+    /// after it, each event carrying the modifiers held so far. Native apps read the flags on the
+    /// key alone, but games poll the modifier keys' state (Minecraft, through GLFW) and would see
+    /// a plain V instead of ⌘V.
+    static func keystrokes(key: CGKeyCode, flags: CGEventFlags) -> [Keystroke] {
+        let modifiers = modifierKeys.filter { flags.contains($0.0) }
+        var held: CGEventFlags = []
+        var events: [Keystroke] = []
+        for (flag, code) in modifiers {
+            held.insert(flag)
+            events.append(Keystroke(key: code, down: true, flags: held))
+        }
+        events.append(Keystroke(key: key, down: true, flags: held))
+        events.append(Keystroke(key: key, down: false, flags: held))
+        for (flag, code) in modifiers.reversed() {
+            held.remove(flag)
+            events.append(Keystroke(key: code, down: false, flags: held))
+        }
+        return events
+    }
+
     private static func post(key: CGKeyCode, flags: CGEventFlags) {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
-        down?.flags = flags
-        up?.flags = flags
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+        for stroke in keystrokes(key: key, flags: flags) {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: stroke.key, keyDown: stroke.down)
+            event?.flags = stroke.flags
+            event?.post(tap: .cghidEventTap)
+            // A game polls the keys between frames: give it a moment to see each one.
+            usleep(10_000)
+        }
+    }
+
+    /// The frontmost app, for the log: its bundle identifier, or its name (a bare `java` process has none).
+    static var frontmostName: String {
+        let app = NSWorkspace.shared.frontmostApplication
+        return app?.bundleIdentifier ?? app?.localizedName ?? "?"
     }
 
     /// Code of the key that carries this letter: it isn't in the same place on all
     /// layouts (Bépo, Dvorak).
-    private static func keyCode(for letter: String) -> CGKeyCode {
-        CGKeyCode((0..<50).first { HotkeyManager.keyName($0) == letter } ?? kVK_ANSI_V)
+    private static func keyCode(for letter: String) -> CGKeyCode? {
+        (0..<50).first { HotkeyManager.keyName($0) == letter.uppercased() }.map { CGKeyCode($0) }
     }
 
     // MARK: - Reading the active field
@@ -234,7 +338,7 @@ enum Paster {
         let pasteboard = NSPasteboard.general
         let saved = snapshot(pasteboard)
         let marker = pasteboard.changeCount
-        post(key: keyCode(for: "C"), flags: .maskCommand)
+        post(key: keyCode(for: "C") ?? CGKeyCode(kVK_ANSI_C), flags: .maskCommand)
         try? await Task.sleep(nanoseconds: 180_000_000)
         var text = ""
         if pasteboard.changeCount != marker { text = pasteboard.string(forType: .string) ?? "" }

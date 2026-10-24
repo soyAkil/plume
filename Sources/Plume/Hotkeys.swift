@@ -13,10 +13,12 @@ enum HotkeyAction: Int {
     case transform = 5
     /// Restores the last cancelled recording.
     case restore = 6
+    /// A dictation that opens the game chat, pastes and sends (Minecraft).
+    case gameChat = 7
 
     var mode: RecordingMode? {
         switch self {
-        case .dictation, .transform: return .dictation
+        case .dictation, .transform, .gameChat: return .dictation
         case .meeting: return .meeting
         case .open, .pasteLast, .restore: return nil
         }
@@ -100,6 +102,7 @@ final class HotkeyManager {
         register(settings.pasteLastShortcut, for: .pasteLast)
         register(settings.transformShortcut, for: .transform)
         register(settings.restoreShortcut, for: .restore)
+        register(settings.gameChatShortcut, for: .gameChat)
         setCancelEnabled(cancelEnabled)
     }
 

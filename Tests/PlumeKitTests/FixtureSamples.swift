@@ -59,6 +59,9 @@ enum FixtureSamples {
         AppRule(
             id: UUID(uuidString: "6F1C2A10-0000-4000-8000-000000000005")!, bundleID: "*", name: "Toutes les autres",
             style: .casual, typeText: true),
+        AppRule(
+            id: UUID(uuidString: "6F1C2A10-0000-4000-8000-000000000006")!, bundleID: "process:java", name: "Minecraft",
+            style: .message, pressReturn: true, openKey: "T", openDelay: 0.5),
     ]
 
     static let voiceprint = Voiceprint(embedding: [0.125, -0.5, 0.25, 0.75], samples: 3)
@@ -74,6 +77,7 @@ enum FixtureSamples {
             PlumeSettings.Key.transformShortcut: Shortcut(keyCode: 17, modifiers: ModifierMask.control | ModifierMask.option),
             PlumeSettings.Key.cancelShortcut: Shortcut(keyCode: 53, modifiers: 0),
             PlumeSettings.Key.restoreShortcut: Shortcut(keyCode: 15, modifiers: ModifierMask.control | ModifierMask.option),
+            PlumeSettings.Key.gameChatShortcut: Shortcut(keyCode: nil, modifiers: ModifierMask.control | ModifierMask.option),
         ],
         booleans: Dictionary(uniqueKeysWithValues: SettingsBackup.booleanKeys.map { ($0, $0 != PlumeSettings.Key.keepHistory) }),
         numbers: [

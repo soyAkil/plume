@@ -659,6 +659,45 @@ struct StyleTests {
         #expect(AppRuleStore.rule(for: "x", in: [rules[0]]) == nil)
     }
 
+    /// Minecraft comes with its rule (open the chat with T, send with Return); a saved rule for
+    /// the same process replaces it, and the others are left alone.
+    @Test func builtInRulesApplyUnlessReplaced() {
+        let minecraft = AppRuleStore.builtIn.first { $0.bundleID == "process:java" }
+        #expect(minecraft?.openKey == "T")
+        #expect(minecraft?.openDelay == 0.5)
+        #expect(minecraft?.pressReturn == false)
+        #expect(minecraft?.isBuiltIn == true)
+        let merged = AppRuleStore.withBuiltIn([AppRule(bundleID: "*", name: "Autres")])
+        #expect(merged.map(\.bundleID) == ["*", "process:java"])
+        #expect(AppRuleStore.rule(for: "process:java", in: merged)?.openKey == "T")
+        let own = AppRule(bundleID: "process:java", name: "Minecraft", openKey: "")
+        #expect(AppRuleStore.withBuiltIn([own]).count == 1)
+        #expect(AppRuleStore.rule(for: "process:java", in: AppRuleStore.withBuiltIn([own]))?.openKey == "")
+        #expect(AppRule(bundleID: "com.apple.mail", name: "Mail").isBuiltIn == false)
+    }
+
+    @Test func theGameAndItsLauncherAreKnown() {
+        #expect(AppRule.isGame("process:java"))
+        #expect(AppRule.isGame("com.mojang.minecraftlauncher"))
+        #expect(!AppRule.isGame("com.apple.mail"))
+        #expect(!AppRule.isGame(nil))
+    }
+
+    @Test func anAppWithoutBundleIdentifierIsKnownByItsProcess() {
+        #expect(AppRule.identifier(bundleID: "com.apple.mail", processName: "Mail") == "com.apple.mail")
+        #expect(AppRule.identifier(bundleID: nil, processName: "java") == "process:java")
+        #expect(AppRule.identifier(bundleID: "", processName: "java") == "process:java")
+        #expect(AppRule.identifier(bundleID: nil, processName: nil) == nil)
+    }
+
+    /// A rule saved before the opening key existed reads back without one.
+    @Test func aRuleWithoutOpeningKeyReadsBack() throws {
+        let json = #"[{"bundleID":"com.apple.mail","name":"Mail"}]"#.data(using: .utf8)!
+        let rules = try JSONDecoder().decode([AppRule].self, from: json)
+        #expect(rules.first?.openKey == "")
+        #expect(rules.first?.openDelay == 0.5)
+    }
+
     @Test func smartInsertion() {
         let text = "Je passe demain."
         #expect(SmartInsert.adapt(text, context: .empty) == text)

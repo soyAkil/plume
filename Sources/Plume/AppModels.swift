@@ -481,6 +481,7 @@ final class SettingsModel: ObservableObject {
     @Published var transformShortcut: Shortcut { didSet { settings.transformShortcut = transformShortcut; onShortcutsChanged() } }
     @Published var cancelShortcut: Shortcut { didSet { settings.cancelShortcut = cancelShortcut; onShortcutsChanged() } }
     @Published var restoreShortcut: Shortcut { didSet { settings.restoreShortcut = restoreShortcut; onShortcutsChanged() } }
+    @Published var gameChatShortcut: Shortcut { didSet { settings.gameChatShortcut = gameChatShortcut; onShortcutsChanged() } }
     /// Hours during which a cancelled recording stays restorable (0: never kept).
     @Published var cancelledRetentionHours: Int {
         didSet {
@@ -543,6 +544,7 @@ final class SettingsModel: ObservableObject {
         transformShortcut = settings.transformShortcut
         cancelShortcut = settings.cancelShortcut
         restoreShortcut = settings.restoreShortcut
+        gameChatShortcut = settings.gameChatShortcut
         cancelledRetentionHours = settings.cancelledRetentionHours
         liveTranscript = settings.liveTranscript
         modeSwitchAtStart = settings.modeSwitchAtStart
@@ -764,6 +766,7 @@ final class SettingsModel: ObservableObject {
         transformShortcut = settings.transformShortcut
         cancelShortcut = settings.cancelShortcut
         restoreShortcut = settings.restoreShortcut
+        gameChatShortcut = settings.gameChatShortcut
         cancelledRetentionHours = settings.cancelledRetentionHours
         liveTranscript = settings.liveTranscript
         modeSwitchAtStart = settings.modeSwitchAtStart
